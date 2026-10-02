@@ -61,17 +61,17 @@ jobs:
         run: dotnet restore Configurator.csproj -p:EnableWindowsTargeting=true
       - name: Build diagnostics
         working-directory: /tmp/app
-        continue-on-error: true
         run: dotnet build Configurator.csproj --configuration Release --no-restore -p:EnableWindowsTargeting=true > /tmp/build.log 2>&1
-      - name: Upload diagnostics
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: repair-3.16.3-build-log
-          path: /tmp/build.log
       - name: Repackage and verify
         run: |
           rm -f Configurator_v3.16.3.zip
           cd /tmp/app
           zip -qr "$GITHUB_WORKSPACE/Configurator_v3.16.3.zip" . -x 'bin/*' 'obj/*' '.git/*'
           unzip -t "$GITHUB_WORKSPACE/Configurator_v3.16.3.zip"
+      - name: Commit repaired archive
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Configurator_v3.16.3.zip
+          git commit -m "fix: include database Excel export handler in 3.16.3"
+          git push
