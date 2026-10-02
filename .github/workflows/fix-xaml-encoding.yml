@@ -1,0 +1,59 @@
+name: fix-xaml-encoding
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: write
+jobs:
+  fix:
+    if: !contains(github.event.head_commit.message, 'fix: normalize XAML encoding')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Normalize XAML encoding and rebuild archive
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import zipfile, tempfile, shutil
+          src=Path("Configurator_v3.16.2.zip")
+          with tempfile.TemporaryDirectory() as td:
+              root=Path(td)/"src"
+              root.mkdir()
+              with zipfile.ZipFile(src,"r") as z:
+                  z.extractall(root)
+              for rel in [
+                  "FirstScreen/EditRowWindow.xaml",
+                  "Themes/ThemePickerWindow.xaml",
+                  "Themes/ThemeWindow.xaml",
+              ]:
+                  p=root/rel
+                  b=p.read_bytes()
+                  try:
+                      text=b.decode("utf-8-sig")
+                  except UnicodeDecodeError:
+                      text=b.decode("cp1251")
+                  p.write_text(text,encoding="utf-8-sig",newline="\n")
+              tmp=Path(td)/"new.zip"
+              with zipfile.ZipFile(tmp,"w",compression=zipfile.ZIP_DEFLATED) as z:
+                  for p in sorted(root.rglob("*")):
+                      if p.is_file():
+                          z.write(p,p.relative_to(root).as_posix())
+              shutil.copy2(tmp,src)
+          with zipfile.ZipFile(src) as z:
+              bad=z.testzip()
+              assert bad is None, bad
+              for rel in [
+                  "FirstScreen/EditRowWindow.xaml",
+                  "Themes/ThemePickerWindow.xaml",
+                  "Themes/ThemeWindow.xaml",
+              ]:
+                  b=z.read(rel)
+                  b.decode("utf-8-sig")
+          PY
+      - name: Commit corrected archive
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Configurator_v3.16.2.zip
+          git commit -m "fix: normalize XAML encoding in 3.16.2"
+          git push
