@@ -20,22 +20,20 @@ jobs:
       - name: Restore and build
         working-directory: /tmp/app
         run: |
-          dotnet restore Configurator.csproj > /tmp/build.log 2>&1 || true
-          dotnet build Configurator.csproj --configuration Release --no-restore -p:EnableWindowsTargeting=true >> /tmp/build.log 2>&1 || true
-          cp /tmp/build.log "$GITHUB_WORKSPACE/build-3.16.3.log"
-          tail -n 200 /tmp/build.log
+          dotnet restore Configurator.csproj -p:EnableWindowsTargeting=true
+          dotnet build Configurator.csproj --configuration Release --no-restore -p:EnableWindowsTargeting=true
       - name: Package source archive
         run: |
           rm -f Configurator_v3.16.3.zip
           cd /tmp/app
           zip -qr "$GITHUB_WORKSPACE/Configurator_v3.16.3.zip" . -x 'bin/*' 'obj/*' '.git/*'
           unzip -t "$GITHUB_WORKSPACE/Configurator_v3.16.3.zip"
-      - name: Commit archive and build log
+      - name: Commit archive and clean temporary source
         run: |
-          rm -rf __source_snapshot source-files.txt project-files.txt
+          rm -rf __source_snapshot source-files.txt project-files.txt build-3.16.3.log
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add Configurator_v3.16.3.zip build-3.16.3.log
-          git add -u __source_snapshot source-files.txt project-files.txt
+          git add Configurator_v3.16.3.zip
+          git add -u __source_snapshot source-files.txt project-files.txt build-3.16.3.log
           git commit -m "release: Configurator 3.16.3 with database Excel export"
           git push
