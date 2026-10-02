@@ -9,16 +9,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Inspect
+      - name: Extract source snapshot
         run: |
-          rm -rf /tmp/app
-          mkdir /tmp/app
+          rm -rf /tmp/app __source_snapshot
+          mkdir /tmp/app __source_snapshot
           unzip -q Configurator_v3.16.2.zip -d /tmp/app
-          find /tmp/app -maxdepth 4 -type f | sort > zip-files.txt
-          find /tmp/app -name '*.csproj' -o -name '*.sln' | sort >> zip-files.txt
-          cp /tmp/app/*.csproj . 2>/dev/null || true
+          cp -a /tmp/app/. __source_snapshot/
+          find __source_snapshot -type f | sort > source-files.txt
+          find __source_snapshot -name '*.csproj' -o -name '*.sln' | sort > project-files.txt
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add zip-files.txt *.csproj 2>/dev/null || true
-          git commit -m 'chore: inspect 3.16.2 project structure' || true
+          git add __source_snapshot source-files.txt project-files.txt
+          git commit -m 'chore: extract 3.16.2 source snapshot' || true
           git push
