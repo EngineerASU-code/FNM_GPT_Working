@@ -1,0 +1,45 @@
+using System;
+using System.IO;
+using System.Linq;
+using System.Windows;
+using Microsoft.Win32;
+
+namespace Configurator
+{
+    public partial class MainWindow
+    {
+        private async void MenuDatabaseExportExcel_Click(object sender, RoutedEventArgs e)
+        {
+            var databaseName = _selectedDbName;
+            if (string.IsNullOrWhiteSpace(databaseName)) databaseName = GetActiveDatabases().FirstOrDefault();
+            if (string.IsNullOrWhiteSpace(databaseName))
+            {
+                MessageBox.Show("Сначала подключите и выберите базу данных.", "Экспорт БД", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            var dialog = new SaveFileDialog
+            {
+                Title = "Экспорт выбранной БД в Excel",
+                Filter = "Excel workbook (*.xlsx)|*.xlsx",
+                DefaultExt = ".xlsx",
+                FileName = $"{databaseName}_SchemaExport.xlsx",
+                AddExtension = true
+            };
+            if (dialog.ShowDialog(this) != true) return;
+
+            try
+            {
+                Mouse.OverrideCursor = System.Windows.Input.Cursors.Wait;
+                await ExcelExportService.ExportDatabaseAsync(_connection.ToConnectionString(databaseName), dialog.FileName);
+                LogAction($"Экспорт БД «{databaseName}» в Excel: {Path.GetFileName(dialog.FileName)}");
+                MessageBox.Show($"Экспорт завершён.\n\nБаза: {databaseName}\nФайл: {dialog.FileName}", "Экспорт БД", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Не удалось экспортировать базу данных:\n\n{ex.Message}", "Ошибка экспорта БД", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+            finally { Mouse.OverrideCursor = null; }
+        }
+    }
+}
