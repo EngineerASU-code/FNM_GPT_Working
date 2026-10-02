@@ -1,0 +1,40 @@
+name: Build Configurator 3.16.3
+on:
+  push:
+    paths:
+      - '__source_snapshot/**'
+      - '.github/workflows/build-3-16-3.yml'
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare source
+        run: |
+          rm -rf /tmp/app
+          mkdir /tmp/app
+          cp -a __source_snapshot/. /tmp/app/
+          rm -rf /tmp/app/bin /tmp/app/obj
+      - name: Restore and build
+        working-directory: /tmp/app
+        run: |
+          dotnet restore Configurator.csproj
+          dotnet build Configurator.csproj --configuration Release --no-restore -p:EnableWindowsTargeting=true
+      - name: Package source archive
+        run: |
+          rm -f Configurator_v3.16.3.zip
+          cd /tmp/app
+          zip -qr "$GITHUB_WORKSPACE/Configurator_v3.16.3.zip" . -x 'bin/*' 'obj/*' '.git/*'
+          unzip -t "$GITHUB_WORKSPACE/Configurator_v3.16.3.zip"
+      - name: Commit archive and clean temporary source
+        run: |
+          rm -rf __source_snapshot source-files.txt project-files.txt
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Configurator_v3.16.3.zip
+          git rm --cached -r __source_snapshot 2>/dev/null || true
+          git add -u
+          git commit -m "release: Configurator 3.16.3 with database Excel export"
+          git push
