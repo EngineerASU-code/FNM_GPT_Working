@@ -22,6 +22,7 @@ jobs:
           using System.IO;
           using System.Linq;
           using System.Windows;
+          using System.Windows.Input;
           using Microsoft.Win32;
 
           namespace Configurator
@@ -48,7 +49,7 @@ jobs:
                       if (dialog.ShowDialog(this) != true) return;
                       try
                       {
-                          Mouse.OverrideCursor = System.Windows.Input.Cursors.Wait;
+                          Mouse.OverrideCursor = Cursors.Wait;
                           await ExcelExportService.ExportDatabaseAsync(_connection.ToConnectionString(databaseName), dialog.FileName);
                           LogAction($"Экспорт БД «{databaseName}» в Excel: {Path.GetFileName(dialog.FileName)}");
                           MessageBox.Show($"Экспорт завершён.\n\nБаза: {databaseName}\nФайл: {dialog.FileName}", "Экспорт БД", MessageBoxButton.OK, MessageBoxImage.Information);
