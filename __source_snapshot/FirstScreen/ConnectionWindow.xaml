@@ -1,0 +1,23 @@
+<Window x:Class="Configurator.ConnectionWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Title="Новое подключение" Height="600" Width="620" MinWidth="620" MinHeight="600" WindowStartupLocation="CenterOwner" ResizeMode="NoResize" Background="{DynamicResource BrushBase}">
+    <Grid Margin="28">
+        <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+        <TextBlock Grid.Row="0" Text="Подключение к SQL Server" FontSize="22" FontWeight="SemiBold" Foreground="{DynamicResource BrushText}"/>
+        <TextBlock Grid.Row="1" Text="Последние сервер и пользователь подставляются автоматически. Пароль хранится только для текущего подключения." FontSize="11" Foreground="{DynamicResource BrushTextSecondary}" Margin="0,4,0,20" TextWrapping="Wrap"/>
+        <TextBlock Grid.Row="2" Text="Сервер" FontWeight="SemiBold" Foreground="{DynamicResource BrushText}" Margin="0,0,0,6"/>
+        <TextBox Grid.Row="3" x:Name="TxtServer" Margin="0,0,0,14"/>
+        <Grid Grid.Row="4" Margin="0,0,0,2">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="14"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+            <StackPanel Grid.Column="0"><TextBlock Text="Пользователь" FontWeight="SemiBold" Foreground="{DynamicResource BrushText}" Margin="0,0,0,6"/><TextBox x:Name="TxtUser"/></StackPanel>
+            <StackPanel Grid.Column="2"><TextBlock Text="Пароль" FontWeight="SemiBold" Foreground="{DynamicResource BrushText}" Margin="0,0,0,6"/><PasswordBox x:Name="PwdBox"/></StackPanel>
+        </Grid>
+        <TextBlock Grid.Row="5" Text="База данных" FontWeight="SemiBold" Foreground="{DynamicResource BrushText}" Margin="0,18,0,6"/>
+        <ComboBox Grid.Row="6" x:Name="CmbDatabase" Margin="0,0,0,16"/>
+        <Grid Grid.Row="7">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="10"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+            <Button Grid.Column="0" x:Name="BtnConnect" Content="Проверить подключение" Style="{StaticResource BtnPrimary}" Click="BtnConnect_Click"/>
+            <Button Grid.Column="2" x:Name="BtnAdd" Content="Добавить базу" Style="{StaticResource BtnSecondary}" Click="BtnAdd_Click" IsEnabled="False" MinWidth="120"/>
+        </Grid>
+        <Border Grid.Row="8" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="0,1,0,0" Margin="0,18,0,0"/>
+        <TextBlock x:Name="LblStatus" Grid.Row="9" Text="Готово" FontSize="11" Foreground="{DynamicResource BrushTextSecondary}" Margin="0,30,0,0" TextWrapping="Wrap"/>
+    </Grid>
+</Window>
