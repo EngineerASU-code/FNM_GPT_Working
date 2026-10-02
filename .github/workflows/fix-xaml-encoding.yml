@@ -57,3 +57,5 @@ jobs:
           git add Configurator_v3.16.2.zip
           git commit -m "fix: normalize XAML encoding in 3.16.2"
           git push
+
+# trigger
