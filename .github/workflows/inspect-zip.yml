@@ -22,3 +22,4 @@ jobs:
           git add __source_snapshot source-files.txt project-files.txt
           git commit -m 'chore: extract 3.16.2 source snapshot' || true
           git push
+      # trigger source extraction
