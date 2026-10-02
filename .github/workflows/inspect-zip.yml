@@ -2,8 +2,6 @@ name: Inspect 3.16.2
 on:
   workflow_dispatch:
   push:
-    paths:
-      - 'Configurator_v3.16.2.zip'
 permissions:
   contents: write
 jobs:
