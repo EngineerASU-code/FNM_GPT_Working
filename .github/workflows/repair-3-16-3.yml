@@ -1,0 +1,82 @@
+name: Repair Configurator 3.16.3
+on:
+  push:
+    paths:
+      - '.github/workflows/repair-3-16-3.yml'
+permissions:
+  contents: write
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Extract archive
+        run: |
+          rm -rf /tmp/app
+          mkdir /tmp/app
+          unzip -q Configurator_v3.16.3.zip -d /tmp/app
+      - name: Restore missing export handler
+        run: |
+          cat > /tmp/app/MainWindow/MainWindow.DatabaseExport.cs <<'EOF'
+          using System;
+          using System.IO;
+          using System.Linq;
+          using System.Windows;
+          using Microsoft.Win32;
+
+          namespace Configurator
+          {
+              public partial class MainWindow
+              {
+                  private async void MenuDatabaseExportExcel_Click(object sender, RoutedEventArgs e)
+                  {
+                      var databaseName = _selectedDbName;
+                      if (string.IsNullOrWhiteSpace(databaseName)) databaseName = GetActiveDatabases().FirstOrDefault();
+                      if (string.IsNullOrWhiteSpace(databaseName))
+                      {
+                          MessageBox.Show("Сначала подключите и выберите базу данных.", "Экспорт БД", MessageBoxButton.OK, MessageBoxImage.Information);
+                          return;
+                      }
+                      var dialog = new SaveFileDialog
+                      {
+                          Title = "Экспорт выбранной БД в Excel",
+                          Filter = "Excel workbook (*.xlsx)|*.xlsx",
+                          DefaultExt = ".xlsx",
+                          FileName = $"{databaseName}_SchemaExport.xlsx",
+                          AddExtension = true
+                      };
+                      if (dialog.ShowDialog(this) != true) return;
+                      try
+                      {
+                          Mouse.OverrideCursor = System.Windows.Input.Cursors.Wait;
+                          await ExcelExportService.ExportDatabaseAsync(_connection.ToConnectionString(databaseName), dialog.FileName);
+                          LogAction($"Экспорт БД «{databaseName}» в Excel: {Path.GetFileName(dialog.FileName)}");
+                          MessageBox.Show($"Экспорт завершён.\n\nБаза: {databaseName}\nФайл: {dialog.FileName}", "Экспорт БД", MessageBoxButton.OK, MessageBoxImage.Information);
+                      }
+                      catch (Exception ex)
+                      {
+                          MessageBox.Show($"Не удалось экспортировать базу данных:\n\n{ex.Message}", "Ошибка экспорта БД", MessageBoxButton.OK, MessageBoxImage.Error);
+                      }
+                      finally { Mouse.OverrideCursor = null; }
+                  }
+              }
+          }
+          EOF
+      - name: Restore and build
+        working-directory: /tmp/app
+        run: |
+          dotnet restore Configurator.csproj -p:EnableWindowsTargeting=true
+          dotnet build Configurator.csproj --configuration Release --no-restore -p:EnableWindowsTargeting=true
+      - name: Repackage and verify
+        run: |
+          rm -f Configurator_v3.16.3.zip
+          cd /tmp/app
+          zip -qr "$GITHUB_WORKSPACE/Configurator_v3.16.3.zip" . -x 'bin/*' 'obj/*' '.git/*'
+          unzip -t "$GITHUB_WORKSPACE/Configurator_v3.16.3.zip"
+      - name: Commit repaired archive
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Configurator_v3.16.3.zip
+          git commit -m "fix: include database Excel export handler in 3.16.3"
+          git push
