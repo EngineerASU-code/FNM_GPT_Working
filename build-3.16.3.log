@@ -1,0 +1,11 @@
+  Determining projects to restore...
+/usr/share/dotnet/sdk/10.0.401/Sdks/Microsoft.NET.Sdk/targets/Microsoft.NET.Sdk.FrameworkReferenceResolution.targets(120,5): error NETSDK1100: To build a project targeting Windows on this operating system, set the EnableWindowsTargeting property to true. [/tmp/app/Configurator.csproj]
+/usr/share/dotnet/sdk/10.0.401/Sdks/Microsoft.NET.Sdk/targets/Microsoft.PackageDependencyResolution.targets(266,5): error NETSDK1004: Assets file '/tmp/app/obj/project.assets.json' not found. Run a NuGet package restore to generate this file. [/tmp/app/Configurator.csproj]
+
+Build FAILED.
+
+/usr/share/dotnet/sdk/10.0.401/Sdks/Microsoft.NET.Sdk/targets/Microsoft.PackageDependencyResolution.targets(266,5): error NETSDK1004: Assets file '/tmp/app/obj/project.assets.json' not found. Run a NuGet package restore to generate this file. [/tmp/app/Configurator.csproj]
+    0 Warning(s)
+    1 Error(s)
+
+Time Elapsed 00:00:00.76

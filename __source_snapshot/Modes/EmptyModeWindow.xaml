@@ -1,8 +1,0 @@
-<Window x:Class="Configurator.EmptyModeWindow"
-        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        WindowStyle="SingleBorderWindow" ResizeMode="CanResize" ShowInTaskbar="True"
-        WindowState="Normal" Width="1200" Height="760" Background="{DynamicResource BrushBase}"
-        KeyDown="Window_KeyDown" Focusable="True">
-    <Grid Background="{DynamicResource BrushBase}"/>
-</Window>
