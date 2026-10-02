@@ -1,61 +1,59 @@
-name: fix-xaml-encoding
+name: Fix XAML encoding
+
 on:
   push:
-    branches: [main]
+    paths:
+      - 'Configurator_v3.16.2.zip'
+      - '.github/workflows/fix-xaml-encoding.yml'
+
 permissions:
   contents: write
+
 jobs:
   fix:
-    if: github.event.head_commit.message != 'fix: normalize XAML encoding'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Normalize XAML encoding and rebuild archive
+      - name: Normalize XAML and rebuild ZIP
         run: |
           python3 - <<'PY'
           from pathlib import Path
           import zipfile, tempfile, shutil
-          src=Path("Configurator_v3.16.2.zip")
+          src = Path("Configurator_v3.16.2.zip")
           with tempfile.TemporaryDirectory() as td:
-              root=Path(td)/"src"
+              root = Path(td) / "src"
               root.mkdir()
-              with zipfile.ZipFile(src,"r") as z:
+              with zipfile.ZipFile(src) as z:
                   z.extractall(root)
-              for rel in [
+              files = [
                   "FirstScreen/EditRowWindow.xaml",
                   "Themes/ThemePickerWindow.xaml",
                   "Themes/ThemeWindow.xaml",
-              ]:
-                  p=root/rel
-                  b=p.read_bytes()
+              ]
+              for rel in files:
+                  p = root / rel
+                  b = p.read_bytes()
                   try:
-                      text=b.decode("utf-8-sig")
+                      s = b.decode("utf-8-sig")
                   except UnicodeDecodeError:
-                      text=b.decode("cp1251")
-                  p.write_text(text,encoding="utf-8-sig",newline="\n")
-              tmp=Path(td)/"new.zip"
-              with zipfile.ZipFile(tmp,"w",compression=zipfile.ZIP_DEFLATED) as z:
+                      s = b.decode("cp1251")
+                  p.write_text(s, encoding="utf-8-sig", newline="\n")
+              out = Path(td) / "fixed.zip"
+              with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
                   for p in sorted(root.rglob("*")):
                       if p.is_file():
-                          z.write(p,p.relative_to(root).as_posix())
-              shutil.copy2(tmp,src)
+                          z.write(p, p.relative_to(root).as_posix())
+              shutil.copy2(out, src)
           with zipfile.ZipFile(src) as z:
-              bad=z.testzip()
-              assert bad is None, bad
-              for rel in [
-                  "FirstScreen/EditRowWindow.xaml",
-                  "Themes/ThemePickerWindow.xaml",
-                  "Themes/ThemeWindow.xaml",
-              ]:
-                  b=z.read(rel)
-                  b.decode("utf-8-sig")
+              assert z.testzip() is None
+              for rel in files:
+                  z.read(rel).decode("utf-8-sig")
           PY
-      - name: Commit corrected archive
+      - name: Commit ZIP
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add Configurator_v3.16.2.zip
-          git commit -m "fix: normalize XAML encoding in 3.16.2"
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m "fix: normalize XAML encoding"
           git push
-
-# trigger
