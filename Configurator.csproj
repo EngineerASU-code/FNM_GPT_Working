@@ -23,4 +23,5 @@
       <Generator>MSBuild:Compile</Generator>
     </None>
   </ItemGroup>
+  <!-- Configurator 4.0 source extraction bootstrap -->
 </Project>
