@@ -14,7 +14,7 @@ public partial class ProjectModeView
 
     private static bool RegisterStartupFixHandlers()
     {
-        EventManager.RegisterClassHandler(typeof(ProjectModeView), FrameworkElement.IsVisibleChangedEvent,
+        EventManager.RegisterClassHandler(typeof(ProjectModeView), UIElement.IsVisibleChangedEvent,
             new DependencyPropertyChangedEventHandler(ProjectModeView_IsVisibleChangedStartupFix));
         EventManager.RegisterClassHandler(typeof(ProjectModeView), Selector.SelectionChangedEvent,
             new SelectionChangedEventHandler(ProjectModeView_ClassSelectionChangedStartupFix), true);
