@@ -17,8 +17,6 @@ public partial class ProjectModeView
     {
         EventManager.RegisterClassHandler(typeof(ProjectModeView), FrameworkElement.LoadedEvent,
             new RoutedEventHandler(ProjectModeView_LoadedDynamic));
-        EventManager.RegisterClassHandler(typeof(ProjectModeView), UIElement.IsVisibleChangedEvent,
-            new DependencyPropertyChangedEventHandler(ProjectModeView_VisibilityChangedDynamic));
         EventManager.RegisterClassHandler(typeof(ProjectModeView), ButtonBase.ClickEvent,
             new RoutedEventHandler(ProjectModeView_ButtonClickedDynamic), true);
         EventManager.RegisterClassHandler(typeof(ProjectModeView), Selector.SelectionChangedEvent,
@@ -30,12 +28,6 @@ public partial class ProjectModeView
 
     private static void ProjectModeView_LoadedDynamic(object sender, RoutedEventArgs e)
         => ScheduleDynamicArchitecture((ProjectModeView)sender);
-
-    private static void ProjectModeView_VisibilityChangedDynamic(object sender, DependencyPropertyChangedEventArgs e)
-    {
-        if (e.NewValue is bool visible && visible)
-            ScheduleDynamicArchitecture((ProjectModeView)sender);
-    }
 
     private static void ProjectModeView_ButtonClickedDynamic(object sender, RoutedEventArgs e)
     {
@@ -70,7 +62,6 @@ public partial class ProjectModeView
     {
         if (_resolvingProjectArchitecture || _connection == null || string.IsNullOrWhiteSpace(_selectedDatabase)) return;
         if (string.Equals(_resolvedProjectDatabase, _selectedDatabase, StringComparison.OrdinalIgnoreCase)) return;
-
         _resolvingProjectArchitecture = true;
         try
         {
@@ -91,10 +82,7 @@ public partial class ProjectModeView
         {
             TxtStatus.Text = $"Архитектура БД не определена: {ex.Message}";
         }
-        finally
-        {
-            _resolvingProjectArchitecture = false;
-        }
+        finally { _resolvingProjectArchitecture = false; }
     }
 
     private static T FindAncestor<T>(DependencyObject source) where T : DependencyObject
