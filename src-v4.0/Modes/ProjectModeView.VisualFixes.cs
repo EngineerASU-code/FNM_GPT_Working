@@ -89,7 +89,7 @@ public partial class ProjectModeView
         var groups = fields
             .Select(f => new { Field = f, Group = ResolveObjectGroup(f.Name) })
             .GroupBy(x => x.Group, StringComparer.OrdinalIgnoreCase)
-            .OrderBy(g => GroupOrder(g.Key))
+            .OrderBy(g => VisualGroupOrder(g.Key))
             .ThenBy(g => g.Key, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
@@ -184,7 +184,7 @@ public partial class ProjectModeView
         catch { return Array.Empty<LookupOption>(); }
     }
 
-    private static int GroupOrder(string group) => group switch
+    private static int VisualGroupOrder(string group) => group switch
     {
         "Object" => 0,
         "Visual" => 1,
