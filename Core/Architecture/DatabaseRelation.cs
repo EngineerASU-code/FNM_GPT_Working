@@ -34,5 +34,6 @@ public sealed class DatabaseRelation
     public RelationConfidence Confidence { get; init; }
     public string RuleId { get; init; } = "";
     public string Comment { get; init; } = "";
-    public bool IsUsableForDeletionProtection => Confidence is RelationConfidence.Confirmed or RelationConfidence.High;
+    /// <summary>Medium-confidence logical dependencies are protected too: uncertainty must block destructive work rather than silently ignore a real reference.</summary>
+    public bool IsUsableForDeletionProtection => Confidence is RelationConfidence.Confirmed or RelationConfidence.High or RelationConfidence.Medium;
 }
