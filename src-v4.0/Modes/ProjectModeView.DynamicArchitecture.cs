@@ -2,6 +2,7 @@ using System;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Threading;
 
 namespace Configurator;
@@ -16,7 +17,7 @@ public partial class ProjectModeView
     {
         EventManager.RegisterClassHandler(typeof(ProjectModeView), FrameworkElement.LoadedEvent,
             new RoutedEventHandler(ProjectModeView_LoadedDynamic));
-        EventManager.RegisterClassHandler(typeof(ProjectModeView), FrameworkElement.IsVisibleChangedEvent,
+        EventManager.RegisterClassHandler(typeof(ProjectModeView), UIElement.IsVisibleChangedEvent,
             new DependencyPropertyChangedEventHandler(ProjectModeView_VisibilityChangedDynamic));
         EventManager.RegisterClassHandler(typeof(ProjectModeView), ButtonBase.ClickEvent,
             new RoutedEventHandler(ProjectModeView_ButtonClickedDynamic), true);
