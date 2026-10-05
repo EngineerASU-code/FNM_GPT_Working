@@ -10,22 +10,14 @@ namespace Configurator;
 
 public partial class ProjectModeView
 {
-    private readonly bool _objectDetailsHook = RegisterObjectDetailsHook();
-
-    private bool RegisterObjectDetailsHook()
+    private void ObjectDetailsHost_Loaded(object sender, RoutedEventArgs e)
     {
-        Loaded += (_, __) =>
-        {
-            ObjectList.SelectionChanged -= ObjectList_SelectionChanged_4_2;
-            ObjectList.SelectionChanged += ObjectList_SelectionChanged_4_2;
-        };
-        return true;
+        ObjectList.SelectionChanged -= ObjectList_SelectionChanged_4_2;
+        ObjectList.SelectionChanged += ObjectList_SelectionChanged_4_2;
     }
 
     private void ObjectList_SelectionChanged_4_2(object sender, SelectionChangedEventArgs e)
     {
-        // Let the existing 4.1 handler select the row first, then replace its
-        // partial layout with the complete, grouped field presentation.
         Dispatcher.BeginInvoke(new Action(RenderCompleteObjectDetails), DispatcherPriority.DataBind);
     }
 
@@ -52,12 +44,7 @@ public partial class ProjectModeView
         foreach (var name in actualNames)
         {
             var known = _selectedClass.Fields.FirstOrDefault(f => f.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
-            fields.Add(known ?? new FieldDefinition
-            {
-                Name = name,
-                DataType = _selectedRow.Table.Columns[name].DataType.Name,
-                Group = "Прочее"
-            });
+            fields.Add(known ?? new FieldDefinition { Name = name, DataType = _selectedRow.Table.Columns[name].DataType.Name, Group = "Прочее" });
         }
 
         var grouped = fields
@@ -74,7 +61,6 @@ public partial class ProjectModeView
             card.SetResourceReference(Border.BackgroundProperty, "BrushBase");
             card.SetResourceReference(Border.BorderBrushProperty, "BrushBorder");
             card.BorderThickness = new Thickness(1);
-
             var stack = new StackPanel();
             var title = new TextBlock { Text = group.Key, FontSize = 12, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 0, 0, 7) };
             title.SetResourceReference(TextBlock.ForegroundProperty, "BrushText");
@@ -86,57 +72,39 @@ public partial class ProjectModeView
                 var row = new Grid { Margin = new Thickness(0, 0, 0, 6) };
                 row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(0.9, GridUnitType.Star), MinWidth = 110 });
                 row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1.1, GridUnitType.Star), MinWidth = 150 });
-
                 var label = new TextBlock { Text = field.Name, FontSize = 10, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis, ToolTip = field.Name };
                 label.SetResourceReference(TextBlock.ForegroundProperty, "BrushTextSecondary");
                 Grid.SetColumn(label, 0);
                 row.Children.Add(label);
-
-                var box = new TextBox
-                {
-                    Text = GetText(field.Name),
-                    Height = 30,
-                    Padding = new Thickness(7, 3, 7, 3),
-                    Tag = field.Name,
-                    TextWrapping = TextWrapping.NoWrap,
-                    HorizontalContentAlignment = HorizontalAlignment.Left,
-                    ToolTip = $"{field.Name}: {GetText(field.Name)}"
-                };
+                var box = new TextBox { Text = GetText(field.Name), Height = 30, Padding = new Thickness(7, 3, 7, 3), Tag = field.Name, TextWrapping = TextWrapping.NoWrap, HorizontalContentAlignment = HorizontalAlignment.Left, ToolTip = $"{field.Name}: {GetText(field.Name)}" };
                 box.SetResourceReference(Control.BackgroundProperty, "BrushPanel");
                 box.SetResourceReference(Control.ForegroundProperty, "BrushText");
                 box.SetResourceReference(Control.BorderBrushProperty, "BrushBorder");
-                box.SetResourceReference(Control.CaretBrushProperty, "BrushText");
                 Grid.SetColumn(box, 1);
                 row.Children.Add(box);
                 stack.Children.Add(row);
             }
-
             card.Child = stack;
             Grid.SetColumn(card, column);
-            Grid.SetRow(card, 0);
             ObjectEditor.Children.Add(card);
             column = column == 0 ? 1 : 0;
         }
-
         TxtStatus.Text = $"{_selectedClass.Name} · показаны все {fields.Count} полей объекта";
     }
 
     private string ResolveDisplayGroup(FieldDefinition field)
     {
         var group = FieldGroupCatalog.Resolve(_selectedClass.Name, field.Name);
-        if (!string.IsNullOrWhiteSpace(group) && !group.Equals("Other", StringComparison.OrdinalIgnoreCase))
-            return group;
-        return "Прочее";
+        return string.IsNullOrWhiteSpace(group) ? "Прочее" : group;
     }
 
     private static int GroupOrder(string group) => group switch
     {
-        "Идентификация" => 0,
-        "PLC / класс" => 1,
-        "Конфигурация" => 2,
-        "Area / Unit / Type" => 3,
-        "Адреса" => 4,
-        "Параметры" => 5,
+        "Object" => 0,
+        "Visual" => 1,
+        "Config" => 2,
+        "Conditions" => 3,
+        "Parameters" => 4,
         "Прочее" => 100,
         _ => 50
     };
