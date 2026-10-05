@@ -14,17 +14,9 @@ public partial class ProjectModeView
 
     private static bool RegisterStartupFixHandlers()
     {
-        EventManager.RegisterClassHandler(typeof(ProjectModeView), UIElement.IsVisibleChangedEvent,
-            new DependencyPropertyChangedEventHandler(ProjectModeView_IsVisibleChangedStartupFix));
         EventManager.RegisterClassHandler(typeof(ProjectModeView), Selector.SelectionChangedEvent,
             new SelectionChangedEventHandler(ProjectModeView_ClassSelectionChangedStartupFix), true);
         return true;
-    }
-
-    private static void ProjectModeView_IsVisibleChangedStartupFix(object sender, DependencyPropertyChangedEventArgs e)
-    {
-        if (e.NewValue is bool visible && visible)
-            ScheduleProjectDataReady((ProjectModeView)sender);
     }
 
     private static void ProjectModeView_ClassSelectionChangedStartupFix(object sender, SelectionChangedEventArgs e)
