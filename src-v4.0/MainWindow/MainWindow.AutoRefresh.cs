@@ -42,18 +42,13 @@ public partial class MainWindow
     {
         if (_connection == null || _connection.ConnectedDatabases.Count == 0) return;
         if (EditorModeView.Visibility != Visibility.Visible) return;
-
-        // Do not overwrite a value while the user is actively editing a cell.
-        if (Keyboard.FocusedElement is System.Windows.Controls.TextBox) return;
+        if (System.Windows.Input.Keyboard.FocusedElement is System.Windows.Controls.TextBox) return;
 
         try
         {
             if (_activeVm != null && !string.IsNullOrWhiteSpace(_activeDbName))
                 await LoadDataAsync();
 
-            // Re-read table lists occasionally. Expanded database nodes are
-            // refreshed in place, so a newly created/deleted table becomes
-            // visible without a manual refresh button.
             if ((DateTime.UtcNow - _lastSchemaAutoRefresh).TotalSeconds >= 15)
             {
                 _lastSchemaAutoRefresh = DateTime.UtcNow;
