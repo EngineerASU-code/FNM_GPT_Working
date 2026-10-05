@@ -32,6 +32,7 @@
                 </Grid>
             </Border>
         </DataTemplate>
+        <ItemsPanelTemplate x:Key="ArchitectureTabsPanel"><UniformGrid Columns="2"/></ItemsPanelTemplate>
         <Style x:Key="ArchitectureTabItemStyle" TargetType="TabItem">
             <Setter Property="Foreground" Value="{DynamicResource BrushText}"/>
             <Setter Property="Background" Value="{DynamicResource BrushPanel}"/>
@@ -70,7 +71,7 @@
                 </StackPanel>
             </Border>
         </Grid>
-        <TabControl Grid.Row="1" Background="Transparent" BorderThickness="0" HorizontalContentAlignment="Stretch" ItemsPanel="{StaticResource ArchitectureTabsPanel}">
+        <TabControl Grid.Row="1" Background="Transparent" BorderThickness="0" HorizontalContentAlignment="Stretch" ItemContainerStyle="{StaticResource ArchitectureTabItemStyle}" ItemsPanel="{StaticResource ArchitectureTabsPanel}">
             <TabItem Header="Граф связей"><local:DatabaseGraphView x:Name="DatabaseGraphControl"/></TabItem>
             <TabItem Header="Классы и поля">
                 <Grid Margin="0,10,0,0">
