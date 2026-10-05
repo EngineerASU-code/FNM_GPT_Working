@@ -8,17 +8,10 @@ public partial class TemplateArchitectureView
     static TemplateArchitectureView()
     {
         EventManager.RegisterClassHandler(typeof(TemplateArchitectureView), FrameworkElement.LoadedEvent, new RoutedEventHandler(GraphHost_LoadedStatic));
-        EventManager.RegisterClassHandler(typeof(TemplateArchitectureView), UIElement.IsVisibleChangedEvent, new DependencyPropertyChangedEventHandler(GraphHost_IsVisibleChangedStatic));
     }
 
     private static void GraphHost_LoadedStatic(object sender, RoutedEventArgs e)
         => ((TemplateArchitectureView)sender).RefreshGraphFromCurrentProject();
-
-    private static void GraphHost_IsVisibleChangedStatic(object sender, DependencyPropertyChangedEventArgs e)
-    {
-        if (e.NewValue is bool visible && visible)
-            ((TemplateArchitectureView)sender).RefreshGraphFromCurrentProject();
-    }
 
     private void RefreshGraphFromCurrentProject()
     {
