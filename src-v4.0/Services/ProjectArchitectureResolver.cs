@@ -47,16 +47,19 @@ public sealed class ProjectArchitectureResolver
         {
             ct.ThrowIfCancellationRequested();
             string table = ResolveTable(cls, names);
+            var mapping = cls.StorageMappings.FirstOrDefault(x => x.Role.Equals("primary", StringComparison.OrdinalIgnoreCase));
             if (string.IsNullOrWhiteSpace(table))
             {
-                if (cls.IsSystem)
-                    cls.PrimaryStorage = null;
+                if (cls.IsSystem && mapping != null) cls.StorageMappings.Remove(mapping);
                 continue;
             }
 
-            cls.PrimaryStorage ??= new StorageMapping();
-            cls.PrimaryStorage.TableName = table;
-            cls.PrimaryStorage.Role = "primary";
+            if (mapping == null)
+            {
+                mapping = new StorageMapping { Role = "primary" };
+                cls.StorageMappings.Add(mapping);
+            }
+            mapping.TableName = table;
         }
     }
 
