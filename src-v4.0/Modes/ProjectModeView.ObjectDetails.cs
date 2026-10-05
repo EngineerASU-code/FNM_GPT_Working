@@ -10,10 +10,16 @@ namespace Configurator;
 
 public partial class ProjectModeView
 {
-    private void ObjectDetailsHost_Loaded(object sender, RoutedEventArgs e)
+    static ProjectModeView()
     {
-        ObjectList.SelectionChanged -= ObjectList_SelectionChanged_4_2;
-        ObjectList.SelectionChanged += ObjectList_SelectionChanged_4_2;
+        EventManager.RegisterClassHandler(typeof(ProjectModeView), FrameworkElement.LoadedEvent, new RoutedEventHandler(ObjectDetailsHost_LoadedStatic));
+    }
+
+    private static void ObjectDetailsHost_LoadedStatic(object sender, RoutedEventArgs e)
+    {
+        var view = (ProjectModeView)sender;
+        view.ObjectList.SelectionChanged -= view.ObjectList_SelectionChanged_4_2;
+        view.ObjectList.SelectionChanged += view.ObjectList_SelectionChanged_4_2;
     }
 
     private void ObjectList_SelectionChanged_4_2(object sender, SelectionChangedEventArgs e)
@@ -33,9 +39,7 @@ public partial class ProjectModeView
         TxtObjectName.Text = PickName(_selectedRow, _selectedClass);
         string plc = GetText("PLC");
         string record = GetText("Record");
-        TxtObjectMeta.Text = string.IsNullOrWhiteSpace(plc) && string.IsNullOrWhiteSpace(record)
-            ? $"Класс: {_selectedClass.Name} · все поля объекта"
-            : $"PLC {plc} · Record {record} · все поля объекта";
+        TxtObjectMeta.Text = string.IsNullOrWhiteSpace(plc) && string.IsNullOrWhiteSpace(record) ? $"Класс: {_selectedClass.Name} · все поля объекта" : $"PLC {plc} · Record {record} · все поля объекта";
         TxtPreviewGlyph.Text = _selectedClass.Name.Length > 3 ? _selectedClass.Name[..3].ToUpperInvariant() : _selectedClass.Name.ToUpperInvariant();
         TxtPreviewClass.Text = _selectedClass.Name;
 
@@ -47,13 +51,7 @@ public partial class ProjectModeView
             fields.Add(known ?? new FieldDefinition { Name = name, DataType = _selectedRow.Table.Columns[name].DataType.Name, Group = "Прочее" });
         }
 
-        var grouped = fields
-            .Select(f => new { Field = f, Group = ResolveDisplayGroup(f) })
-            .GroupBy(x => x.Group, StringComparer.OrdinalIgnoreCase)
-            .OrderBy(g => GroupOrder(g.Key))
-            .ThenBy(g => g.Key, StringComparer.OrdinalIgnoreCase)
-            .ToList();
-
+        var grouped = fields.Select(f => new { Field = f, Group = ResolveDisplayGroup(f) }).GroupBy(x => x.Group, StringComparer.OrdinalIgnoreCase).OrderBy(g => GroupOrder(g.Key)).ThenBy(g => g.Key, StringComparer.OrdinalIgnoreCase).ToList();
         int column = 0;
         foreach (var group in grouped)
         {
@@ -65,7 +63,6 @@ public partial class ProjectModeView
             var title = new TextBlock { Text = group.Key, FontSize = 12, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 0, 0, 7) };
             title.SetResourceReference(TextBlock.ForegroundProperty, "BrushText");
             stack.Children.Add(title);
-
             foreach (var item in group)
             {
                 var field = item.Field;
