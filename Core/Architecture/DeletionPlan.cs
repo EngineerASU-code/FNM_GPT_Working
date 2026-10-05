@@ -5,13 +5,13 @@ namespace Configurator.Core.Architecture;
 public sealed class DeletionRequest
 {
     public string TableName { get; init; } = "";
-    public IReadOnlyDictionary<string, object?> Key { get; init; } = new Dictionary<string, object?>();
+    public IReadOnlyDictionary<string, object> Key { get; init; } = new Dictionary<string, object>();
 }
 
 public sealed class DependencyHit
 {
     public string SourceTable { get; init; } = "";
-    public IReadOnlyDictionary<string, object?> SourceKey { get; init; } = new Dictionary<string, object?>();
+    public IReadOnlyDictionary<string, object> SourceKey { get; init; } = new Dictionary<string, object>();
     public string SourceColumnDescription { get; init; } = "";
     public string TargetTable { get; init; } = "";
     public DatabaseRelation Relation { get; init; } = new();
