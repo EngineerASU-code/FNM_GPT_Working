@@ -20,7 +20,6 @@
             </Border>
         </DataTemplate>
     </UserControl.Resources>
-
     <Grid Margin="10,8,10,6">
         <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
         <Grid Grid.Row="0" Margin="1,0,1,7">
@@ -36,11 +35,8 @@
                 <Button Content="↻" Width="34" Height="32" Margin="5,0,0,0" Style="{StaticResource BtnCompact}" ToolTip="Обновить структуру" Click="Refresh_Click"/>
             </StackPanel>
         </Grid>
-
         <TabControl Grid.Row="1" Background="Transparent" BorderThickness="0">
-            <TabItem Header="Граф связей">
-                <local:DatabaseGraphView x:Name="DatabaseGraphControl"/>
-            </TabItem>
+            <TabItem Header="Граф связей"><local:DatabaseGraphView x:Name="DatabaseGraphControl"/></TabItem>
             <TabItem Header="Классы и поля">
                 <Grid Margin="0,7,0,0">
                     <Grid.ColumnDefinitions><ColumnDefinition Width="280" MinWidth="260" MaxWidth="340"/><ColumnDefinition Width="8"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
@@ -48,7 +44,7 @@
                         <DockPanel>
                             <TextBlock DockPanel.Dock="Top" Text="Классы" FontSize="14" FontWeight="SemiBold" Margin="10,8,10,5" Foreground="{DynamicResource BrushText}"/>
                             <Button x:Name="AddClassButton" DockPanel.Dock="Top" Content="＋  Новый класс" Height="36" Margin="8,0,8,7" Style="{StaticResource BtnPrimary}" Click="AddClass_Click"/>
-                            <ListBox x:Name="ClassList" Margin="5,0,5,5" ItemTemplate="{StaticResource ClassItemTemplate}" BorderThickness="0" Background="Transparent" HorizontalContentContentAlignment="Stretch" SelectionChanged="ClassList_SelectionChanged"/>
+                            <ListBox x:Name="ClassList" Margin="5,0,5,5" ItemTemplate="{StaticResource ClassItemTemplate}" BorderThickness="0" Background="Transparent" HorizontalContentAlignment="Stretch" SelectionChanged="ClassList_SelectionChanged"/>
                         </DockPanel>
                     </Border>
                     <Border Grid.Column="2" Background="{DynamicResource BrushPanel}" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" CornerRadius="10">
@@ -91,7 +87,6 @@
                 </Grid>
             </TabItem>
         </TabControl>
-
         <DockPanel Grid.Row="2" Margin="3,6,3,0"><TextBlock x:Name="TxtStatus" Text="Готово" Foreground="{DynamicResource BrushTextSecondary}" FontSize="10"/></DockPanel>
     </Grid>
 </UserControl>
