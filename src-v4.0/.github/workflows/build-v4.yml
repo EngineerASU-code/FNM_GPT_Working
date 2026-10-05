@@ -1,0 +1,49 @@
+name: Build Configurator 4.0
+
+on:
+  push:
+    branches: [v4-source]
+    paths:
+      - '**.cs'
+      - '**.xaml'
+      - '**.csproj'
+      - '**.slnx'
+      - 'docs/**'
+      - '.github/workflows/build-v4.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Restore
+        run: dotnet restore Configurator.csproj
+      - name: Build
+        run: dotnet build Configurator.csproj -c Release --no-restore
+      - name: Create source archive
+        shell: pwsh
+        run: |
+          if (Test-Path Configurator_v4.0.zip) { Remove-Item Configurator_v4.0.zip -Force }
+          $items = Get-ChildItem -Force | Where-Object { $_.Name -notin @('.git','bin','obj','Configurator_v4.0.zip') }
+          Compress-Archive -Path $items.FullName -DestinationPath Configurator_v4.0.zip -Force
+      - name: Publish archive to main
+        shell: bash
+        run: |
+          set -e
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          cp Configurator_v4.0.zip /tmp/Configurator_v4.0.zip
+          git fetch origin main
+          rm -f Configurator_v4.0.zip
+          git checkout main
+          cp /tmp/Configurator_v4.0.zip Configurator_v4.0.zip
+          git add Configurator_v4.0.zip
+          git commit -m "release: Configurator 4.0" || true
+          git push origin main
