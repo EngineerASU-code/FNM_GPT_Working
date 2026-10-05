@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Data;
+using System.Globalization;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -8,284 +9,189 @@ using System.Windows;
 using System.Windows.Controls;
 using Configurator.Application.Architecture;
 using Configurator.Core.Architecture;
-using Configurator.Infrastructure.Database;
 
 namespace Configurator;
 
 public partial class ProjectModeView : UserControl
 {
-    private readonly ClassArchitectureService _architecture = new();
     private ConnectionSettings _connection;
     private string _selectedDatabase = "";
+    private ProjectDatabaseCatalog _catalog;
     private ClassDefinition _selectedClass;
     private DataTable _objects = new();
     private DataRow _selectedRow;
+    private List<ColumnInfo> _columns = new();
     private CancellationTokenSource _loadCts;
-    private ClassRegistryService _classRegistry;
-    private bool _filterSelectionGuard;
+    private bool _filterGuard;
 
     public ProjectModeView()
     {
         InitializeComponent();
-        ObjectList.ContextMenu = BuildObjectContextMenu();
-        ObjectList.PreviewMouseRightButtonDown += ObjectList_PreviewMouseRightButtonDown;
-        ObjectList.PreviewKeyDown += ObjectList_PreviewKeyDown;
-        BtnDelete.IsEnabled = false;
-        BtnDuplicate.IsEnabled = false;
-        BtnSave.IsEnabled = false;
-        InitializeEmptyFilterLists();
-        RefreshClasses();
+        BtnDelete.IsEnabled = false; BtnDuplicate.IsEnabled = false; BtnSave.IsEnabled = false; BtnNewObject.IsEnabled = false;
     }
+
+    public event EventHandler ProjectSelectionRequested;
 
     public void Configure(ConnectionSettings connection, IEnumerable<string> databases, string selectedDatabase)
     {
         _connection = connection;
-        _selectedDatabase = selectedDatabase ?? string.Empty;
-        TxtProjectDatabase.Text = string.IsNullOrWhiteSpace(_selectedDatabase) ? "не выбран" : _selectedDatabase;
-        _ = ConfigureProjectAsync();
+        SetProjectDatabase(selectedDatabase);
     }
 
     public void SetProjectDatabase(string database)
     {
-        _selectedDatabase = database ?? string.Empty;
+        _selectedDatabase = database ?? "";
         TxtProjectDatabase.Text = string.IsNullOrWhiteSpace(_selectedDatabase) ? "не выбран" : _selectedDatabase;
-        _ = ConfigureProjectAsync();
+        _ = LoadCatalogAsync();
     }
 
-    private void SelectProject_Click(object sender, RoutedEventArgs e)
-        => ProjectSelectionRequested?.Invoke(this, EventArgs.Empty);
+    private void SelectProject_Click(object sender, RoutedEventArgs e) => ProjectSelectionRequested?.Invoke(this, EventArgs.Empty);
+    private async void Refresh_Click(object sender, RoutedEventArgs e) => await LoadCatalogAsync();
 
-    public event EventHandler ProjectSelectionRequested;
-
-    private async Task ConfigureProjectAsync()
+    private async Task LoadCatalogAsync()
     {
-        await RefreshProjectAvailabilityAsync();
-        await PopulateGlobalFilterListsAsync();
-    }
-
-    private void RefreshClasses()
-    {
-        var classes = _architecture.Classes
-            .Where(x => x.Available && !x.Name.Equals("Program", StringComparison.OrdinalIgnoreCase) && !x.Name.Equals("Step", StringComparison.OrdinalIgnoreCase) && !x.Name.Equals("Matrix", StringComparison.OrdinalIgnoreCase))
-            .OrderBy(x => x.ClassNumber > 0 ? x.ClassNumber : int.MaxValue)
-            .ThenBy(x => x.Name)
-            .ToList();
-        ClassList.ItemsSource = classes;
-    }
-
-    private async Task RefreshProjectAvailabilityAsync()
-    {
-        if (_connection == null || string.IsNullOrWhiteSpace(_selectedDatabase))
-        {
-            RefreshClasses();
-            return;
-        }
-
-        foreach (var cls in _architecture.Classes) cls.Available = true;
+        _loadCts?.Cancel(); _loadCts = new CancellationTokenSource();
+        var ct = _loadCts.Token;
+        _catalog = null; _selectedClass = null; _objects = new DataTable(); _selectedRow = null;
+        ClassList.ItemsSource = null; OtherElementList.ItemsSource = null; ObjectList.ItemsSource = null; CmbPlcFilter.ItemsSource = null;
+        ClearObjectEditor();
+        if (_connection == null || string.IsNullOrWhiteSpace(_selectedDatabase)) return;
         try
         {
-            _classRegistry = new ClassRegistryService(_connection.ToConnectionString(_selectedDatabase));
-            var availability = await _classRegistry.GetAvailabilityAsync();
-            foreach (var cls in _architecture.Classes)
-                cls.Available = availability.TryGetValue(cls.ClassNumber, out bool available) ? available : true;
+            var service = new ProjectDatabaseCatalogService(_connection.ToConnectionString(_selectedDatabase));
+            _catalog = await service.LoadAsync(ct);
+            if (ct.IsCancellationRequested) return;
+            ClassList.ItemsSource = _catalog.Classes.Where(x => x.Available).ToList();
+            OtherElementList.ItemsSource = BuildOtherElements();
+            TxtStatus.Text = $"Подключена БД «{_catalog.Schema.DatabaseName}» · классов: {_catalog.Classes.Count}";
         }
-        catch
-        {
-            // If a legacy DB has no registry yet, system defaults remain available.
-        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex) { TxtStatus.Text = "Не удалось прочитать архитектуру БД"; MessageBox.Show(ex.Message, "Проект", MessageBoxButton.OK, MessageBoxImage.Warning); }
+    }
 
-        RefreshClasses();
+    private List<OtherElementItem> BuildOtherElements()
+    {
+        var result = new List<OtherElementItem>();
+        foreach (var pair in new[] { ("PLC", "PLC"), ("Area", "Areas"), ("Unit", "Units") })
+        {
+            var table = _catalog.Schema.Tables.FirstOrDefault(t => t.Name.Equals(pair.Item2, StringComparison.OrdinalIgnoreCase));
+            if (table != null) result.Add(new OtherElementItem { Title = pair.Item1, TableName = table.FullName });
+        }
+        return result;
     }
 
     private async void ClassList_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (ClassList.SelectedItem is not ClassDefinition cls) return;
-        _selectedClass = cls;
-        await LoadActualClassFieldsAsync();
-        TxtClassTitle.Text = cls.Name;
-        BtnNewObject.IsEnabled = !string.IsNullOrWhiteSpace(cls.PrimaryStorage?.TableName) && !string.IsNullOrWhiteSpace(_selectedDatabase);
-        ClearObjectEditor();
-        await LoadObjectsAsync();
-        RebuildObjectFilters();
+        _filterGuard = true; OtherElementList.SelectedIndex = -1; _filterGuard = false;
+        await SelectEntityAsync(cls);
     }
 
-    private async Task LoadActualClassFieldsAsync()
+    private async void OtherElementList_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (_selectedClass?.PrimaryStorage == null || _connection == null || string.IsNullOrWhiteSpace(_selectedDatabase)) return;
-        try
-        {
-            var reader = new Configurator.Infrastructure.Database.ClassArchitectureReader(_connection.ToConnectionString(_selectedDatabase));
-            var actual = await reader.LoadFieldsAsync(_selectedClass.PrimaryStorage.TableName, _selectedClass.Name);
-            if (actual.Count > 0)
-                _selectedClass.Fields = actual;
-        }
-        catch { }
+        if (_filterGuard || OtherElementList.SelectedItem is not OtherElementItem item || _catalog == null) return;
+        _filterGuard = true; ClassList.SelectedIndex = -1; _filterGuard = false;
+        var table = _catalog.Schema.FindTable(item.TableName);
+        if (table == null) return;
+        var cls = new ClassDefinition { Id = "element:" + item.TableName, Name = item.Title, ClassNumber = 0, IsSystem = false, Available = true };
+        cls.StorageMappings.Add(new StorageMapping { Role = "primary", TableName = table.FullName, KeyColumns = table.Keys.FirstOrDefault(k => k.IsPrimary)?.Columns ?? new List<string>() });
+        foreach (var column in table.Columns) cls.Fields.Add(new FieldDefinition { Name = column.Name, DataType = column.DataType, Nullable = column.IsNullable, Group = "Database" });
+        await SelectEntityAsync(cls);
+    }
+
+    private async Task SelectEntityAsync(ClassDefinition cls)
+    {
+        _selectedClass = cls;
+        TxtClassTitle.Text = cls.Name;
+        BtnNewObject.IsEnabled = cls.PrimaryStorage != null && !string.IsNullOrWhiteSpace(_selectedDatabase);
+        ClearObjectEditor();
+        await LoadObjectsAsync();
     }
 
     private async Task LoadObjectsAsync()
     {
-        CancelLoad();
-        _loadCts = new CancellationTokenSource();
-        var ct = _loadCts.Token;
-        _objects = new DataTable();
-        ObjectList.ItemsSource = null;
-        if (_selectedClass?.PrimaryStorage == null || string.IsNullOrWhiteSpace(_selectedDatabase)) return;
-
+        CancelLoad(); _loadCts = new CancellationTokenSource(); var ct = _loadCts.Token;
+        ObjectList.ItemsSource = null; _objects = new DataTable();
+        if (_selectedClass?.PrimaryStorage == null || _connection == null) return;
         try
         {
             var db = new DatabaseService(_connection.ToConnectionString(_selectedDatabase));
-            var columns = await db.GetTableColumnsAsync(_selectedClass.PrimaryStorage.TableName, ct);
-            if (columns.Count == 0) return;
-            var order = columns.Take(3).Select(x => x.Name).ToList();
+            _columns = await db.GetTableColumnsAsync(_selectedClass.PrimaryStorage.TableName, ct);
+            var order = _columns.Take(3).Select(x => x.Name).ToList();
             _objects = await db.GetTableDataPageAsync(_selectedClass.PrimaryStorage.TableName, 1, 5000, order, null, ct);
-            RebuildObjectFilters();
-            ApplyObjectFilters();
-            TxtStatus.Text = $"{_selectedClass.Name} · объектов: {_objects.Rows.Count}";
-            if (TxtObjectCount != null) TxtObjectCount.Text = $"{_objects.Rows.Count} объектов";
+            RebuildPlcFilter(); ApplyObjectFilters();
+            TxtObjectCount.Text = $"{_objects.Rows.Count} объектов";
+            TxtStatus.Text = $"{_selectedClass.Name} · { _selectedClass.PrimaryStorage.TableName } · строк: {_objects.Rows.Count}";
         }
         catch (OperationCanceledException) { }
-        catch (Exception ex)
+        catch (Exception ex) { TxtStatus.Text = $"Не удалось загрузить {_selectedClass.Name}: {ex.Message}"; }
+    }
+
+    private void RebuildPlcFilter()
+    {
+        if (!_objects.Columns.Contains("PLC")) { CmbPlcFilter.ItemsSource = null; return; }
+        var values = _objects.Rows.Cast<DataRow>().Select(r => r["PLC"] == DBNull.Value ? "" : Convert.ToString(r["PLC"]))
+            .Where(x => !string.IsNullOrWhiteSpace(x)).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(x => x).ToList();
+        _filterGuard = true;
+        CmbPlcFilter.ItemsSource = values.Select(x => new FilterItem { Title = x, Value = x }).ToList();
+        CmbPlcFilter.SelectedIndex = -1;
+        _filterGuard = false;
+    }
+
+    private void ObjectFilter_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_filterGuard) return;
+        ApplyObjectFilters();
+    }
+
+    private void ApplyObjectFilters()
+    {
+        if (_objects == null) return;
+        var selectedPlc = CmbPlcFilter.SelectedItems.Cast<FilterItem>().Select(x => x.Value).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var list = new List<ObjectItem>();
+        for (int i = 0; i < _objects.Rows.Count; i++)
         {
-            TxtStatus.Text = $"Не удалось загрузить объекты: {ex.Message}";
+            var row = _objects.Rows[i];
+            if (selectedPlc.Count > 0 && _objects.Columns.Contains("PLC"))
+            {
+                string plc = row["PLC"] == DBNull.Value ? "" : Convert.ToString(row["PLC"]);
+                if (!selectedPlc.Contains(plc)) continue;
+            }
+            string name = PickName(row, _selectedClass);
+            string meta = _objects.Columns.Contains("Record") ? $"PLC={GetRowText(row, "PLC")} · Record={GetRowText(row, "Record")}" : "";
+            list.Add(new ObjectItem { Name = name, Meta = meta, RowIndex = i });
         }
-    }
-
-    private static List<ObjectItem> BuildObjectNames(DataTable table, ClassDefinition cls)
-    {
-        var result = new List<ObjectItem>();
-        for (int i = 0; i < table.Rows.Count; i++)
-        {
-            var row = table.Rows[i];
-            result.Add(new ObjectItem { Name = PickName(row, cls), RowIndex = i });
-        }
-        return result;
-    }
-
-    private static string PickName(DataRow row, ClassDefinition cls)
-    {
-        foreach (var field in new[] { "Name", "Name_L1", "NameL1", "Tag" })
-            if (row.Table.Columns.Contains(field) && row[field] != DBNull.Value && !string.IsNullOrWhiteSpace(Convert.ToString(row[field])))
-                return Convert.ToString(row[field]);
-        string plc = row.Table.Columns.Contains("PLC") ? Convert.ToString(row["PLC"]) : "";
-        string record = row.Table.Columns.Contains("Record") ? Convert.ToString(row["Record"]) : "";
-        return string.IsNullOrWhiteSpace(plc) && string.IsNullOrWhiteSpace(record) ? $"{cls.Name} · {row.GetHashCode()}" : $"{cls.Name} · PLC={plc} · Record={record}";
-    }
-
-
-    private void ObjectList_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
-    {
-        if (e.Key != System.Windows.Input.Key.Delete || ObjectList.SelectedItems.Count == 0) return;
-        DeleteObject_Click(sender, new RoutedEventArgs());
-        e.Handled = true;
-    }
-
-    private void ObjectList_PreviewMouseRightButtonDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
-    {
-        var container = ItemsControl.ContainerFromElement(ObjectList, e.OriginalSource as DependencyObject) as ListBoxItem;
-        if (container?.DataContext is ObjectItem item)
-        {
-            ObjectList.SelectedItems.Clear();
-            ObjectList.SelectedItem = item;
-        }
-    }
-
-    private ContextMenu BuildObjectContextMenu()
-    {
-        var menu = new ContextMenu();
-        var edit = new MenuItem { Header = "Открыть объект" }; edit.Click += (s, e) => BuildObjectEditor();
-        menu.Items.Add(edit);
-        return menu;
+        ObjectList.ItemsSource = list;
+        TxtObjectCount.Text = $"{list.Count} объектов";
     }
 
     private void ObjectList_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        var selected = ObjectList.SelectedItems.Cast<ObjectItem>().ToList();
-        if (selected.Count == 0)
-        {
-            ClearObjectEditor();
-            return;
-        }
-        var item = selected[0];
-        if (item.RowIndex < 0 || item.RowIndex >= _objects.Rows.Count) return;
-        _selectedRow = _objects.Rows[item.RowIndex];
-        BuildObjectEditor();
-        BtnDelete.IsEnabled = true;
-        BtnDuplicate.IsEnabled = selected.Count == 1;
-        BtnSave.IsEnabled = selected.Count == 1;
-        TxtStatus.Text = selected.Count > 1
-            ? $"Выбрано объектов: {selected.Count} · редактор показывает первый"
-            : $"Выбран объект: {item.Name}";
+        var item = ObjectList.SelectedItem as ObjectItem;
+        if (item == null || item.RowIndex < 0 || item.RowIndex >= _objects.Rows.Count) { ClearObjectEditor(); return; }
+        _selectedRow = _objects.Rows[item.RowIndex]; BuildObjectEditor();
+        BtnDelete.IsEnabled = true; BtnDuplicate.IsEnabled = true; BtnSave.IsEnabled = true;
+        TxtStatus.Text = $"Выбран: {item.Name}";
     }
 
     private void BuildObjectEditor()
     {
-        ObjectEditor.Children.Clear();
-        ObjectEditor.ColumnDefinitions.Clear();
-        for (int i = 0; i < 2; i++) ObjectEditor.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star), MinWidth = 250 });
-        if (_selectedRow == null || _selectedClass == null) return;
-        string objectName = PickName(_selectedRow, _selectedClass);
-        TxtObjectName.Text = objectName;
-        TxtPreviewGlyph.Text = _selectedClass.Name.Length > 3 ? _selectedClass.Name[..3].ToUpperInvariant() : _selectedClass.Name.ToUpperInvariant();
-        TxtPreviewClass.Text = _selectedClass.Name;
-        string plc = GetText("PLC");
-        string record = GetText("Record");
-        TxtObjectMeta.Text = $"PLC {plc} · Record {record}";
-
-        foreach (var group in FieldGroupCatalog.GetGroups(_selectedClass.Name))
+        ObjectEditor.Children.Clear(); ObjectEditor.ColumnDefinitions.Clear();
+        ObjectEditor.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star), MinWidth = 320 });
+        if (_selectedRow == null) return;
+        TxtObjectName.Text = PickName(_selectedRow, _selectedClass);
+        TxtObjectMeta.Text = _objects.Columns.Contains("Record") ? $"PLC {GetRowText(_selectedRow, "PLC")} · Record {GetRowText(_selectedRow, "Record")}" : _selectedClass?.PrimaryStorage?.TableName ?? "";
+        foreach (var field in _columns)
         {
-            var fields = _selectedClass.Fields.Where(f => FieldGroupCatalog.Resolve(_selectedClass.Name, f.Name).Equals(group, StringComparison.OrdinalIgnoreCase)).ToList();
-            if (fields.Count == 0) continue;
-            var groupCard = new Border { Margin = new Thickness(4), Padding = new Thickness(10), CornerRadius = new CornerRadius(8), HorizontalAlignment = HorizontalAlignment.Stretch, MinWidth = 250 };
-            groupCard.SetResourceReference(Border.BackgroundProperty, "BrushBase");
-            groupCard.SetResourceReference(Border.BorderBrushProperty, "BrushBorder");
-            groupCard.BorderThickness = new Thickness(1);
-            var groupStack = new StackPanel();
-            var header = new TextBlock { Text = group, FontSize = 12, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 0, 0, 6) };
-            header.SetResourceReference(TextBlock.ForegroundProperty, "BrushText");
-            groupStack.Children.Add(header);
-            var grid = new Grid();
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            int col = 0;
-            Grid current = null;
-            foreach (var field in fields)
-            {
-                if (col == 0)
-                {
-                    current = new Grid { Margin = new Thickness(0, 0, 0, 6) };
-                    current.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-                    current.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-                    grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-                }
-                var stack = new StackPanel { Margin = new Thickness(col == 0 ? 0 : 6, 0, 0, 0) };
-                var label = new TextBlock { Text = field.Name, FontSize = 10, Margin = new Thickness(0, 0, 0, 2) };
-                label.SetResourceReference(TextBlock.ForegroundProperty, "BrushTextSecondary");
-                stack.Children.Add(label);
-                var box = new TextBox { Text = GetText(field.Name), Height = 32, MinWidth = 120, Padding = new Thickness(7, 3, 7, 3), Tag = field.Name, TextWrapping = TextWrapping.NoWrap, HorizontalContentAlignment = HorizontalAlignment.Left, ToolTip = $"{field.Name}: {GetText(field.Name)}" };
-                stack.Children.Add(box);
-                Grid.SetColumn(stack, col);
-                current.Children.Add(stack);
-                col++;
-                if (col == 2)
-                {
-                    Grid.SetRow(current, grid.RowDefinitions.Count - 1);
-                    grid.Children.Add(current);
-                    col = 0;
-                }
-            }
-            if (col == 1 && current != null)
-            {
-                Grid.SetRow(current, grid.RowDefinitions.Count - 1);
-                grid.Children.Add(current);
-            }
-            groupStack.Children.Add(grid);
-            groupCard.Child = groupStack;
-            Grid.SetColumn(groupCard, Math.Min(ObjectEditor.ColumnDefinitions.Count - 1, ObjectEditor.Children.Count));
-            ObjectEditor.Children.Add(groupCard);
+            var panel = new StackPanel { Margin = new Thickness(4, 2, 4, 6) };
+            var label = new TextBlock { Text = field.Name + " (" + field.DataType + ")", FontSize = 10 };
+            label.SetResourceReference(TextBlock.ForegroundProperty, "BrushTextSecondary"); panel.Children.Add(label);
+            var box = new TextBox { Text = GetRowText(_selectedRow, field.Name), Height = 31, Padding = new Thickness(7, 3, 7, 3), Tag = field.Name, ToolTip = field.Name };
+            box.SetResourceReference(TextBox.BackgroundProperty, "BrushBase"); box.SetResourceReference(TextBox.ForegroundProperty, "BrushText"); box.SetResourceReference(TextBox.BorderBrushProperty, "BrushBorder");
+            if (field.IsReadOnly || field.Name.Equals("Record", StringComparison.OrdinalIgnoreCase) && _selectedClass?.Name.Equals("PLC", StringComparison.OrdinalIgnoreCase) == false && false) box.IsReadOnly = field.IsReadOnly;
+            panel.Children.Add(box); ObjectEditor.Children.Add(panel);
         }
     }
-
-    private string GetText(string field) => _selectedRow != null && _selectedRow.Table.Columns.Contains(field) && _selectedRow[field] != DBNull.Value ? Convert.ToString(_selectedRow[field]) ?? "" : "";
 
     private async void SaveObject_Click(object sender, RoutedEventArgs e)
     {
@@ -293,57 +199,61 @@ public partial class ProjectModeView : UserControl
         try
         {
             var values = CollectValues();
-            var identity = BuildIdentity();
+            if (values.TryGetValue("Record", out var recordValue) && int.TryParse(Convert.ToString(recordValue), out int record))
+            {
+                int? plc = TryInt(values, "PLC", _selectedRow);
+                int? classNumber = TryInt(values, "PLC_Class_Number", _selectedRow) ?? (_selectedClass.ClassNumber > 0 ? _selectedClass.ClassNumber : null);
+                var identity = BuildIdentity();
+                var validation = await new RecordAllocationService(_connection.ToConnectionString(_selectedDatabase)).ValidateAsync(_selectedClass.PrimaryStorage.TableName, record, plc, classNumber, identity);
+                if (!validation.IsValid)
+                {
+                    var allocation = await new RecordAllocationService(_connection.ToConnectionString(_selectedDatabase)).FindFirstFreeAsync(_selectedClass.PrimaryStorage.TableName, plc, classNumber, Convert.ToInt32(_selectedRow["Record"]));
+                    MessageBox.Show($"Record {record} нельзя сохранить.\n\n{validation.Message}\n\nСвободные варианты: {string.Join(", ", allocation.SuggestedRecords)}", "Недопустимый Record", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+            }
             var db = new DatabaseService(_connection.ToConnectionString(_selectedDatabase));
-            await db.UpdateRowByValuesAsync(_selectedClass.PrimaryStorage.TableName, identity, values);
-            foreach (var pair in values)
-                if (_objects.Columns.Contains(pair.Key))
-                    _selectedRow[pair.Key] = pair.Value ?? DBNull.Value;
-            BuildObjectEditor();
-            TxtStatus.Text = "Объект сохранён";
+            await db.UpdateRowByValuesAsync(_selectedClass.PrimaryStorage.TableName, BuildIdentity(), values);
+            foreach (var pair in values) if (_objects.Columns.Contains(pair.Key)) _selectedRow[pair.Key] = pair.Value ?? DBNull.Value;
+            BuildObjectEditor(); TxtStatus.Text = "Объект сохранён";
         }
-        catch (Exception ex)
-        {
-            MessageBox.Show(ex.Message, "Сохранение объекта", MessageBoxButton.OK, MessageBoxImage.Error);
-        }
+        catch (Exception ex) { MessageBox.Show(ex.Message, "Сохранение объекта", MessageBoxButton.OK, MessageBoxImage.Error); }
     }
 
-    private Dictionary<string, object> CollectValues()
+    private async void NewObject_Click(object sender, RoutedEventArgs e)
     {
-        var result = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
-        foreach (var box in FindTextBoxes(ObjectEditor))
+        if (_selectedClass?.PrimaryStorage == null || _connection == null) return;
+        try
         {
-            string name = box.Tag as string;
-            if (string.IsNullOrWhiteSpace(name) || !_objects.Columns.Contains(name)) continue;
-            result[name] = box.Text;
+            var db = new DatabaseService(_connection.ToConnectionString(_selectedDatabase));
+            var columns = await db.GetTableColumnsAsync(_selectedClass.PrimaryStorage.TableName);
+            var recordColumn = columns.FirstOrDefault(x => x.Name.Equals("Record", StringComparison.OrdinalIgnoreCase));
+            int? plc = GetSingleSelectedPlc();
+            int? classNumber = _selectedClass.ClassNumber > 0 ? _selectedClass.ClassNumber : null;
+            RecordAllocationResult allocation = recordColumn == null ? new RecordAllocationResult(null, 0, Array.Empty<int>(), "Record отсутствует") : await new RecordAllocationService(_connection.ToConnectionString(_selectedDatabase)).FindFirstFreeAsync(_selectedClass.PrimaryStorage.TableName, plc, classNumber);
+            if (recordColumn != null && !allocation.FirstFreeRecord.HasValue)
+            {
+                MessageBox.Show($"Свободных Record нет. Допустимый диапазон: 1..{allocation.MaxRecord}.", "Добавление объекта", MessageBoxButton.OK, MessageBoxImage.Warning); return;
+            }
+            string noAutoPlc = "__MANUAL_PLC__";
+            var dialog = new AddRowWindow(_selectedClass.PrimaryStorage.TableName, columns, allocation.FirstFreeRecord ?? 0, recordColumn?.Name ?? "", _connection.ToConnectionString(_selectedDatabase), noAutoPlc, classNumber, "PLC_Class_Number"){ Owner = Window.GetWindow(this) };
+            if (dialog.ShowDialog() != true || !dialog.Confirmed || dialog.Values == null) return;
+            var values = dialog.Values;
+            if (recordColumn != null && values.TryGetValue(recordColumn.Name, out var recordObject) && int.TryParse(Convert.ToString(recordObject), out int record))
+            {
+                int? chosenPlc = TryInt(values, "PLC", null);
+                var validation = await new RecordAllocationService(_connection.ToConnectionString(_selectedDatabase)).ValidateAsync(_selectedClass.PrimaryStorage.TableName, record, chosenPlc, classNumber);
+                if (!validation.IsValid)
+                {
+                    var fresh = await new RecordAllocationService(_connection.ToConnectionString(_selectedDatabase)).FindFirstFreeAsync(_selectedClass.PrimaryStorage.TableName, chosenPlc, classNumber);
+                    MessageBox.Show($"Указан недопустимый Record {record}.\n{validation.Message}\n\nРекомендуемые свободные: {string.Join(", ", fresh.SuggestedRecords)}", "Добавление остановлено", MessageBoxButton.OK, MessageBoxImage.Warning); return;
+                }
+            }
+            await db.InsertRowAsync(_selectedClass.PrimaryStorage.TableName, values);
+            await LoadObjectsAsync();
+            TxtStatus.Text = $"Объект добавлен. Рекомендуемый Record: {(allocation.FirstFreeRecord?.ToString() ?? "не используется")}. Свободные: {string.Join(", ", allocation.SuggestedRecords)}";
         }
-        return result;
-    }
-
-    private Dictionary<string, object> BuildIdentity()
-    {
-        var result = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
-        foreach (var name in new[] { "PLC", "Record", "Area" })
-            if (_objects.Columns.Contains(name)) result[name] = _selectedRow[name];
-        if (result.Count >= 2) return result;
-
-        var primary = new DatabaseService(_connection.ToConnectionString(_selectedDatabase))
-            .GetPrimaryKeyColumnsAsync(_selectedClass.PrimaryStorage.TableName).GetAwaiter().GetResult();
-        if (primary.Count > 0)
-        {
-            foreach (var key in primary)
-                if (_objects.Columns.Contains(key)) result[key] = _selectedRow[key];
-            return result;
-        }
-
-        result.Clear();
-        foreach (DataColumn column in _objects.Columns)
-        {
-            var name = column.ColumnName;
-            if (!_selectedRow.Table.Columns.Contains(name)) continue;
-            result[name] = _selectedRow[name];
-        }
-        return result;
+        catch (Exception ex) { MessageBox.Show(ex.Message, "Добавление объекта", MessageBoxButton.OK, MessageBoxImage.Error); }
     }
 
     private async void DuplicateObject_Click(object sender, RoutedEventArgs e)
@@ -352,140 +262,113 @@ public partial class ProjectModeView : UserControl
         try
         {
             var db = new DatabaseService(_connection.ToConnectionString(_selectedDatabase));
+            var pk = await db.GetPrimaryKeyColumnsAsync(_selectedClass.PrimaryStorage.TableName);
             var values = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
-            var columns = await db.GetTableColumnsAsync(_selectedClass.PrimaryStorage.TableName);
-            foreach (DataColumn c in _objects.Columns)
+            foreach (DataColumn column in _objects.Columns)
             {
-                var meta = columns.FirstOrDefault(x => x.Name.Equals(c.ColumnName, StringComparison.OrdinalIgnoreCase));
-                if (meta != null && meta.IsReadOnly) continue;
-                if (c.ColumnName.Equals("Record", StringComparison.OrdinalIgnoreCase) && _objects.Columns.Contains("PLC")) continue;
-                values[c.ColumnName] = _selectedRow[c.ColumnName];
+                var meta = _columns.FirstOrDefault(x => x.Name.Equals(column.ColumnName, StringComparison.OrdinalIgnoreCase));
+                if (meta?.IsReadOnly == true) continue;
+                if (pk.Contains(column.ColumnName, StringComparer.OrdinalIgnoreCase)) continue;
+                values[column.ColumnName] = _selectedRow[column.ColumnName];
             }
             if (_objects.Columns.Contains("Record"))
             {
-                int plc = _objects.Columns.Contains("PLC") && _selectedRow["PLC"] != DBNull.Value ? Convert.ToInt32(_selectedRow["PLC"]) : 0;
-                int max = 0;
-                foreach (DataRow row in _objects.Rows)
-                {
-                    if (_objects.Columns.Contains("PLC") && row["PLC"] != DBNull.Value && Convert.ToInt32(row["PLC"]) != plc) continue;
-                    if (row["Record"] == DBNull.Value) continue;
-                    if (int.TryParse(Convert.ToString(row["Record"]), out int r)) max = Math.Max(max, r);
-                }
-                values["Record"] = max + 1;
+                int? plc = TryInt(values, "PLC", _selectedRow); int? classNumber = TryInt(values, "PLC_Class_Number", _selectedRow) ?? (_selectedClass.ClassNumber > 0 ? _selectedClass.ClassNumber : null);
+                var allocation = await new RecordAllocationService(_connection.ToConnectionString(_selectedDatabase)).FindFirstFreeAsync(_selectedClass.PrimaryStorage.TableName, plc, classNumber);
+                if (!allocation.FirstFreeRecord.HasValue) throw new InvalidOperationException("Нет свободного Record для дубликата.");
+                values["Record"] = allocation.FirstFreeRecord.Value;
             }
             await db.InsertRowAsync(_selectedClass.PrimaryStorage.TableName, values);
             await LoadObjectsAsync();
-            TxtStatus.Text = "Объект продублирован";
+            TxtStatus.Text = "Объект продублирован с первым свободным Record";
         }
         catch (Exception ex) { MessageBox.Show(ex.Message, "Дублирование", MessageBoxButton.OK, MessageBoxImage.Error); }
     }
 
     private async void DeleteObject_Click(object sender, RoutedEventArgs e)
     {
-        if (_selectedClass?.PrimaryStorage == null || ObjectList.SelectedItems.Count == 0) return;
-        var selected = ObjectList.SelectedItems.Cast<ObjectItem>().ToList();
-        var names = selected.Select(x => x.Name).ToList();
-        var message = selected.Count == 1
-            ? $"Удалить объект «{names[0]}»?"
-            : $"Удалить выбранные объекты ({selected.Count} шт.)?";
-        if (MessageBox.Show(message, "Удаление объекта", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
+        if (_selectedRow == null || _selectedClass?.PrimaryStorage == null) return;
         try
         {
-            var db = new DatabaseService(_connection.ToConnectionString(_selectedDatabase));
-            int affected = 0;
-            foreach (var item in selected)
-            {
-                if (item.RowIndex < 0 || item.RowIndex >= _objects.Rows.Count) continue;
-                _selectedRow = _objects.Rows[item.RowIndex];
-                var identity = BuildIdentity();
-                affected += await db.DeleteRowsByValuesAsync(_selectedClass.PrimaryStorage.TableName, new List<Dictionary<string, object>> { identity });
-            }
-            await LoadObjectsAsync();
-            TxtStatus.Text = $"Удалено объектов: {selected.Count} · строк: {affected}";
+            var row = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+            foreach (DataColumn column in _objects.Columns) row[column.ColumnName] = _selectedRow[column.ColumnName];
+            bool deleted = await new SafeDeletionWorkflowService(_connection.ToConnectionString(_selectedDatabase)).TryDeleteAsync(_selectedClass.PrimaryStorage.TableName, row, Window.GetWindow(this));
+            if (!deleted) return;
+            await LoadObjectsAsync(); ClearObjectEditor(); TxtStatus.Text = "Удаление завершено после проверки зависимостей";
         }
         catch (Exception ex) { MessageBox.Show(ex.Message, "Удаление", MessageBoxButton.OK, MessageBoxImage.Error); }
     }
 
-    private async void NewObject_Click(object sender, RoutedEventArgs e)
+    private Dictionary<string, object> CollectValues()
     {
-        if (_selectedClass?.PrimaryStorage == null) return;
-        var dialog = new TextInputWindow("Новый объект", $"Имя нового { _selectedClass.Name }:", $"{_selectedClass.Name}_001") { Owner = Window.GetWindow(this) };
-        if (dialog.ShowDialog() != true) return;
-        try
+        var result = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+        foreach (var box in FindTextBoxes(ObjectEditor))
         {
-            var db = new DatabaseService(_connection.ToConnectionString(_selectedDatabase));
-            var values = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
-            foreach (var field in _selectedClass.Fields)
-            {
-                if (_selectedClass.Name.Equals("Status", StringComparison.OrdinalIgnoreCase) && field.Name.Equals("Name", StringComparison.OrdinalIgnoreCase)) values[field.Name] = dialog.Result;
-                else if (field.Name.Equals("Name", StringComparison.OrdinalIgnoreCase)) values[field.Name] = dialog.Result;
-                else if (field.Name.Equals("Record", StringComparison.OrdinalIgnoreCase)) values[field.Name] = await NextRecordAsync(db);
-                else if (field.Name.Equals("PLC_Class_Number", StringComparison.OrdinalIgnoreCase)) values[field.Name] = _selectedClass.ClassNumber;
-                else values[field.Name] = DBNull.Value;
-            }
-            if (_objects.Columns.Contains("PLC")) values["PLC"] = 1;
-            await db.InsertRowAsync(_selectedClass.PrimaryStorage.TableName, values);
-            await LoadObjectsAsync();
+            if (box.Tag is not string name) continue;
+            var column = _columns.FirstOrDefault(x => x.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
+            if (column == null || column.IsReadOnly) continue;
+            result[name] = string.IsNullOrWhiteSpace(box.Text) ? (column.IsNullable ? DBNull.Value : "") : ConvertForColumn(box.Text.Trim(), column);
         }
-        catch (Exception ex) { MessageBox.Show(ex.Message, "Новый объект", MessageBoxButton.OK, MessageBoxImage.Error); }
+        return result;
     }
 
-    private async Task<int> NextRecordAsync(DatabaseService db)
+    private Dictionary<string, object> BuildIdentity()
     {
-        if (!_objects.Columns.Contains("Record")) return 1;
-        int plc = _objects.Columns.Contains("PLC") ? 1 : 0;
-        int max = _objects.Rows.Cast<DataRow>().Where(r => !_objects.Columns.Contains("PLC") || r["PLC"] == DBNull.Value || Convert.ToInt32(r["PLC"]) == plc).Select(r => r["Record"] == DBNull.Value ? 0 : Convert.ToInt32(r["Record"])).DefaultIfEmpty(0).Max();
-        await Task.CompletedTask;
-        return max + 1;
-    }
-
-    private async void Refresh_Click(object sender, RoutedEventArgs e)
-    {
-        if (string.IsNullOrWhiteSpace(_selectedDatabase) || _connection == null) return;
-        if (!await _connection.TestConnectionAsync(_selectedDatabase))
-        {
-            MessageBox.Show($"Связь с БД «{_selectedDatabase}» потеряна. Обновление невозможно.", "Объекты проекта", MessageBoxButton.OK, MessageBoxImage.Warning);
-            return;
-        }
-        await ConfigureProjectAsync();
-        if (_selectedClass != null)
-        {
-            await LoadActualClassFieldsAsync();
-            await LoadObjectsAsync();
-        }
-    }
-
-    private IEnumerable<TextBox> FindTextBoxes(Panel root)
-    {
-        foreach (var child in root.Children)
-        {
-            if (child is TextBox box) yield return box;
-            else if (child is Panel panel) foreach (var nested in FindTextBoxes(panel)) yield return nested;
-        }
+        var result = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+        if (_selectedRow == null || _selectedClass?.PrimaryStorage == null) return result;
+        var pk = _catalog?.Schema.FindTable(_selectedClass.PrimaryStorage.TableName)?.Keys.FirstOrDefault(k => k.IsPrimary)?.Columns;
+        if (pk != null) foreach (var key in pk) if (_objects.Columns.Contains(key)) result[key] = _selectedRow[key];
+        if (result.Count > 0) return result;
+        foreach (var key in new[] { "PLC", "PLC_Class_Number", "Record" }) if (_objects.Columns.Contains(key)) result[key] = _selectedRow[key];
+        return result;
     }
 
     private void ClearObjectEditor()
     {
-        _selectedRow = null;
-        ObjectEditor.Children.Clear();
-        TxtObjectName.Text = "Выберите объект";
-        TxtObjectMeta.Text = "";
-        TxtPreviewGlyph.Text = "OBJ";
-        TxtPreviewClass.Text = "";
-        BtnDelete.IsEnabled = false;
-        BtnDuplicate.IsEnabled = false;
-        BtnSave.IsEnabled = false;
+        _selectedRow = null; ObjectEditor.Children.Clear(); TxtObjectName.Text = "Выберите объект"; TxtObjectMeta.Text = ""; BtnDelete.IsEnabled = false; BtnDuplicate.IsEnabled = false; BtnSave.IsEnabled = false;
     }
 
-    private void CancelLoad()
+    private void CancelLoad() { try { _loadCts?.Cancel(); } catch { } }
+    private static IEnumerable<TextBox> FindTextBoxes(DependencyObject root)
     {
-        _loadCts?.Cancel();
-        _loadCts = null;
+        if (root == null) yield break;
+        for (int i = 0; i < System.Windows.Media.VisualTreeHelper.GetChildrenCount(root); i++)
+        {
+            var child = System.Windows.Media.VisualTreeHelper.GetChild(root, i);
+            if (child is TextBox box) yield return box;
+            foreach (var nested in FindTextBoxes(child)) yield return nested;
+        }
     }
 
-    private sealed class ObjectItem
+    private static string PickName(DataRow row, ClassDefinition cls)
     {
-        public string Name { get; set; } = "";
-        public int RowIndex { get; set; }
+        foreach (var name in new[] { "Name", "Name_L1", "NameL1", "Tag", "AreaName", "IP" }) if (row.Table.Columns.Contains(name) && row[name] != DBNull.Value && !string.IsNullOrWhiteSpace(Convert.ToString(row[name]))) return Convert.ToString(row[name]);
+        string plc = GetRowText(row, "PLC"); string record = GetRowText(row, "Record");
+        return string.IsNullOrWhiteSpace(plc) && string.IsNullOrWhiteSpace(record) ? cls?.Name ?? "Объект" : $"{cls?.Name ?? "Объект"} · PLC={plc} · Record={record}";
     }
+
+    private static string GetRowText(DataRow row, string column) => row != null && row.Table.Columns.Contains(column) && row[column] != DBNull.Value ? Convert.ToString(row[column]) ?? "" : "";
+    private int? GetSingleSelectedPlc() => CmbPlcFilter.SelectedItems.Count == 1 && CmbPlcFilter.SelectedItem is FilterItem item && int.TryParse(item.Value, out int value) ? value : null;
+    private static int? TryInt(Dictionary<string, object> values, string name, DataRow fallback) { if (values.TryGetValue(name, out var value) && int.TryParse(Convert.ToString(value), out int result)) return result; if (fallback != null && fallback.Table.Columns.Contains(name) && int.TryParse(GetRowText(fallback, name), out result)) return result; return null; }
+    private static object ConvertForColumn(string text, ColumnInfo column)
+    {
+        switch (column.DataType.ToLowerInvariant())
+        {
+            case "tinyint": return byte.Parse(text, CultureInfo.InvariantCulture);
+            case "smallint": return short.Parse(text, CultureInfo.InvariantCulture);
+            case "int": return int.Parse(text, CultureInfo.InvariantCulture);
+            case "bigint": return long.Parse(text, CultureInfo.InvariantCulture);
+            case "decimal": case "numeric": case "money": case "smallmoney": return decimal.Parse(text, CultureInfo.InvariantCulture);
+            case "float": return double.Parse(text, CultureInfo.InvariantCulture);
+            case "real": return float.Parse(text, CultureInfo.InvariantCulture);
+            case "bit": return text == "1" || text.Equals("true", StringComparison.OrdinalIgnoreCase) || text.Equals("да", StringComparison.OrdinalIgnoreCase);
+            case "uniqueidentifier": return Guid.Parse(text);
+            case "date": case "datetime": case "datetime2": case "smalldatetime": return DateTime.Parse(text, CultureInfo.InvariantCulture);
+            default: return text;
+        }
+    }
+
+    private sealed class FilterItem { public string Title { get; init; } = ""; public string Value { get; init; } = ""; }
+    private sealed class OtherElementItem { public string Title { get; init; } = ""; public string TableName { get; init; } = ""; }
+    private sealed class ObjectItem { public string Name { get; init; } = ""; public string Meta { get; init; } = ""; public int RowIndex { get; init; } }
 }
