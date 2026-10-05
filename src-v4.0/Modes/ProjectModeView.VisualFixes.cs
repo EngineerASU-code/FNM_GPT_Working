@@ -71,7 +71,13 @@ public partial class ProjectModeView
         var groups = fields
             .Select(f => new { Field = f, Group = ResolveObjectGroup(f.Name) })
             .GroupBy(x => x.Group, StringComparer.OrdinalIgnoreCase)
-            .OrderBy(g => GroupOrder(g.Key))
+            .OrderBy(g => g.Key.Equals("Object", StringComparison.OrdinalIgnoreCase) ? 0
+                : g.Key.Equals("Visual", StringComparison.OrdinalIgnoreCase) ? 1
+                : g.Key.Equals("Config", StringComparison.OrdinalIgnoreCase) ? 2
+                : g.Key.Equals("Conditions", StringComparison.OrdinalIgnoreCase) ? 3
+                : g.Key.Equals("Parameters", StringComparison.OrdinalIgnoreCase) ? 4
+                : g.Key.Equals("Address", StringComparison.OrdinalIgnoreCase) ? 5
+                : g.Key.Equals("Прочее", StringComparison.OrdinalIgnoreCase) ? 100 : 50)
             .ThenBy(g => g.Key, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
@@ -175,16 +181,4 @@ public partial class ProjectModeView
             return "Прочее";
         }
     }
-
-    private static int GroupOrder(string group) => group switch
-    {
-        "Object" => 0,
-        "Visual" => 1,
-        "Config" => 2,
-        "Conditions" => 3,
-        "Parameters" => 4,
-        "Address" => 5,
-        "Прочее" => 100,
-        _ => 50
-    };
 }
