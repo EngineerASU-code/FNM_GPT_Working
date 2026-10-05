@@ -1,25 +1,21 @@
 using System;
-using System.Windows;
 
 namespace Configurator;
 
 public partial class TemplateArchitectureView
 {
-    // The existing 4.1 constructor remains untouched. This hook lets the new graph
-    // follow the mode visibility and the currently selected project database.
-    private readonly bool _graphHook = RegisterGraphHook();
+    private void GraphHost_Loaded(object sender, System.Windows.RoutedEventArgs e)
+        => RefreshGraphFromCurrentProject();
 
-    private bool RegisterGraphHook()
+    private void GraphHost_IsVisibleChanged(object sender, System.Windows.DependencyPropertyChangedEventArgs e)
     {
-        IsVisibleChanged += (_, __) => RefreshGraphFromCurrentProject();
-        Loaded += (_, __) => RefreshGraphFromCurrentProject();
-        return true;
+        if (e.NewValue is bool visible && visible)
+            RefreshGraphFromCurrentProject();
     }
 
     private void RefreshGraphFromCurrentProject()
     {
         if (DatabaseGraphControl == null) return;
-        if (!IsVisible && !DatabaseGraphControl.IsVisible) return;
         DatabaseGraphControl.Configure(_connection, _selectedDatabase);
     }
 }
