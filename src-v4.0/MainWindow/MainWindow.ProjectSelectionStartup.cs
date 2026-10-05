@@ -13,11 +13,11 @@ public partial class MainWindow
     private static bool RegisterProjectSelectionStartupHandler()
     {
         EventManager.RegisterClassHandler(typeof(MainWindow), ButtonBase.ClickEvent,
-            new RoutedEventHandler(MainWindow_ProjectNavigationClicked), true);
+            new RoutedEventHandler(MainWindow_ProjectNavigationStartupClicked), true);
         return true;
     }
 
-    private static void MainWindow_ProjectNavigationClicked(object sender, RoutedEventArgs e)
+    private static void MainWindow_ProjectNavigationStartupClicked(object sender, RoutedEventArgs e)
     {
         var window = (MainWindow)sender;
         if (e.OriginalSource is not Button button) return;
@@ -25,8 +25,6 @@ public partial class MainWindow
         if (!string.IsNullOrWhiteSpace(window._selectedDbName)) return;
         if (window.GetActiveDatabases().Count == 0) return;
 
-        // Run before the instance Click handler changes the mode. The dialog
-        // is modal, so the normal ActivateMode call continues with a valid DB.
         window.Dispatcher.BeginInvoke(new Action(() =>
         {
             if (string.IsNullOrWhiteSpace(window._selectedDbName))
