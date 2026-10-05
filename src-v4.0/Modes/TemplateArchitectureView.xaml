@@ -4,6 +4,25 @@
              xmlns:local="clr-namespace:Configurator"
              Background="{DynamicResource BrushBase}">
     <UserControl.Resources>
+        <!-- FieldRowTemplate is deliberately declared in XAML. It must exist before any
+             runtime grouping/selection code can call FindResource(). -->
+        <DataTemplate x:Key="FieldRowTemplate">
+            <Border Margin="0,2,0,2" Padding="4" CornerRadius="5" Background="{DynamicResource BrushBase}" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="180"/><ColumnDefinition Width="115"/><ColumnDefinition Width="75"/>
+                        <ColumnDefinition Width="75"/><ColumnDefinition Width="75"/><ColumnDefinition Width="80"/><ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBox Grid.Column="0" Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}" Height="28" Margin="2"/>
+                    <TextBox Grid.Column="1" Text="{Binding DataType, UpdateSourceTrigger=PropertyChanged}" Height="28" Margin="2"/>
+                    <TextBox Grid.Column="2" Text="{Binding Size, UpdateSourceTrigger=PropertyChanged}" Height="28" Margin="2"/>
+                    <TextBox Grid.Column="3" Text="{Binding Offset, UpdateSourceTrigger=PropertyChanged}" Height="28" Margin="2"/>
+                    <TextBox Grid.Column="4" Text="{Binding BitOffset, UpdateSourceTrigger=PropertyChanged}" Height="28" Margin="2"/>
+                    <CheckBox Grid.Column="5" IsChecked="{Binding Nullable, UpdateSourceTrigger=PropertyChanged}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    <TextBox Grid.Column="6" Text="{Binding Description, UpdateSourceTrigger=PropertyChanged}" Height="28" Margin="2"/>
+                </Grid>
+            </Border>
+        </DataTemplate>
         <DataTemplate x:Key="ClassItemTemplate">
             <Border Margin="2,2" Padding="7" CornerRadius="7" Background="{DynamicResource BrushBase}" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1"><Grid><Grid.ColumnDefinitions><ColumnDefinition Width="38"/><ColumnDefinition Width="*"/><ColumnDefinition Width="88"/></Grid.ColumnDefinitions><Border Grid.Column="0" Width="28" Height="24" CornerRadius="6" HorizontalAlignment="Center" Background="{DynamicResource BrushSelected}" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1"><TextBlock Text="{Binding ClassNumber}" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="{DynamicResource BrushAccent}" FontWeight="SemiBold" FontSize="11"/></Border><StackPanel Grid.Column="1" Margin="6,0,4,0"><TextBlock Text="{Binding Name}" Foreground="{DynamicResource BrushText}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/><TextBlock Text="{Binding PrimaryStorage.TableName}" Foreground="{DynamicResource BrushTextSecondary}" FontSize="10" TextTrimming="CharacterEllipsis"/></StackPanel><TextBlock Grid.Column="2" Text="{Binding Available, Converter={StaticResource BoolToAvailabilityConverter}}" VerticalAlignment="Center" Foreground="{DynamicResource BrushTextSecondary}" FontSize="10" TextTrimming="CharacterEllipsis"/></Grid></Border>
         </DataTemplate>

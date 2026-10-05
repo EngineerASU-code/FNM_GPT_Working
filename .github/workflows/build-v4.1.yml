@@ -1,4 +1,4 @@
-name: Build Configurator 4.3
+name: Build Configurator 4.3.1
 
 on:
   push:
@@ -22,26 +22,26 @@ jobs:
       - name: Restore
         working-directory: src-v4.0
         run: dotnet restore Configurator.csproj
-      - name: Build 4.3
+      - name: Build 4.3.1
         working-directory: src-v4.0
         run: dotnet build Configurator.csproj -c Release --no-restore
-      - name: Create 4.3 source archive
+      - name: Create 4.3.1 source archive
         shell: pwsh
         working-directory: src-v4.0
         run: |
-          if (Test-Path Configurator_v4.3.zip) { Remove-Item Configurator_v4.3.zip -Force }
-          $items = Get-ChildItem -Force | Where-Object { $_.Name -notin @('.git','bin','obj','Configurator_v4.3.zip') }
-          Compress-Archive -Path $items.FullName -DestinationPath Configurator_v4.3.zip -Force
-      - name: Publish 4.3 archive to main
+          if (Test-Path Configurator_v4.3.1.zip) { Remove-Item Configurator_v4.3.1.zip -Force }
+          $items = Get-ChildItem -Force | Where-Object { $_.Name -notin @('.git','bin','obj','Configurator_v4.3.1.zip') }
+          Compress-Archive -Path $items.FullName -DestinationPath Configurator_v4.3.1.zip -Force
+      - name: Publish 4.3.1 archive to main
         shell: bash
         run: |
           set -e
-          cp src-v4.0/Configurator_v4.3.zip /tmp/Configurator_v4.3.zip
+          cp src-v4.0/Configurator_v4.3.1.zip /tmp/Configurator_v4.3.1.zip
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git fetch origin main
           git checkout main
-          cp /tmp/Configurator_v4.3.zip Configurator_v4.3.zip
-          git add Configurator_v4.3.zip
-          git commit -m "release: Configurator 4.3 [skip ci]" || true
+          cp /tmp/Configurator_v4.3.1.zip Configurator_v4.3.1.zip
+          git add Configurator_v4.3.1.zip
+          git commit -m "release: Configurator 4.3.1 [skip ci]" || true
           git push origin main
