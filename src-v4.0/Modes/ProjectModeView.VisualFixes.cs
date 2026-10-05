@@ -67,12 +67,8 @@ public partial class ProjectModeView
         foreach (var field in fields)
         {
             if (!lookupTasks.ContainsKey(field.Name))
-                lookupTasks[field.Name] = TryLoadLookupAsync(lookup, field.Name);
+                lookupTasks[field.Name] = TryLoadLookupAsync(lookup, _selectedClass.Name, _selectedClass.PrimaryStorage?.TableName, field.Name);
         }
-
-        // Resolve all linked lists before touching the visual tree. Previously the
-        // editor was cleared and then rebuilt after every awaited lookup, which
-        // produced the visible "Config first, everything else later" flicker.
         await Task.WhenAll(lookupTasks.Values);
 
         ObjectEditor.Children.Clear();
@@ -182,9 +178,9 @@ public partial class ProjectModeView
         ObjectEditor.Visibility = Visibility.Visible;
     }
 
-    private static async Task<IReadOnlyList<LookupOption>> TryLoadLookupAsync(LookupOptionsService lookup, string fieldName)
+    private static async Task<IReadOnlyList<LookupOption>> TryLoadLookupAsync(LookupOptionsService lookup, string className, string tableName, string fieldName)
     {
-        try { return await lookup.TryGetAsync("", null, fieldName); }
+        try { return await lookup.TryGetAsync(className, tableName, fieldName); }
         catch { return Array.Empty<LookupOption>(); }
     }
 
