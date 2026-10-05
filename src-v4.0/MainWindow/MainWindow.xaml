@@ -2,99 +2,57 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:local="clr-namespace:Configurator"
-        Title="Configurator 4.1"
+        Title="Configurator 4.2"
         MinWidth="1000" MinHeight="640"
         Height="820" Width="1440"
         WindowStartupLocation="CenterScreen"
+        WindowState="Maximized"
         Background="{DynamicResource BrushBase}"
         SnapsToDevicePixels="True">
     <Grid>
-        <Grid.RowDefinitions>
-            <RowDefinition Height="42"/>
-            <RowDefinition Height="54"/>
-            <RowDefinition Height="1"/>
-            <RowDefinition Height="*"/>
-            <RowDefinition Height="Auto"/>
-        </Grid.RowDefinitions>
-
+        <Grid.RowDefinitions><RowDefinition Height="42"/><RowDefinition Height="54"/><RowDefinition Height="1"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
         <Menu Grid.Row="0" Padding="6,0" Background="{DynamicResource BrushPanel}" Foreground="{DynamicResource BrushText}">
             <MenuItem Header="Файл" Style="{StaticResource TopMenuItemStyle}">
                 <MenuItem Header="Экспорт проекта" Click="MenuFileExportProject_Click"/>
                 <MenuItem Header="Очистить кэш" Click="MenuFileClearCache_Click"/>
                 <Separator/>
                 <MenuItem Header="Текстовые списки" Click="MenuFileSettings_Click"/>
-                <Separator/>
-                <MenuItem Header="Выход" Click="MenuFileExit_Click"/>
+                <Separator/><MenuItem Header="Выход" Click="MenuFileExit_Click"/>
             </MenuItem>
             <MenuItem Header="Вид" Style="{StaticResource TopMenuItemStyle}">
-                <Separator/>
-                <MenuItem Header="Тема оформления" Click="MenuViewTheme_Click"/>
-                <MenuItem Header="На весь экран" Click="MenuViewFullscreen_Click"/>
+                <Separator/><MenuItem Header="Тема оформления" Click="MenuViewTheme_Click"/><MenuItem Header="На весь экран" Click="MenuViewFullscreen_Click"/>
             </MenuItem>
             <MenuItem x:Name="MenuDatabase" Header="База данных" Style="{StaticResource TopMenuItemStyle}">
                 <MenuItem x:Name="MenuRemoveDb" Header="Удалить выбранную базу" Click="BtnRemoveDb_Click" IsEnabled="False"/>
                 <MenuItem Header="Добавить базу" Click="BtnOpenConnection_Click"/>
                 <MenuItem Header="Экспорт выбранной БД в Excel" Click="MenuDatabaseExportExcel_Click"/>
-                <Separator/>
-                <MenuItem Header="Свободный ввод" Click="MenuDatabaseFreeSql_Click"/>
+                <Separator/><MenuItem Header="Свободный ввод" Click="MenuDatabaseFreeSql_Click"/>
             </MenuItem>
-            <MenuItem Header="Опции" Style="{StaticResource TopMenuItemStyle}">
-                <MenuItem Header="Журнал операций" Click="MenuOptionsActionLog_Click"/>
-            </MenuItem>
-            <MenuItem Header="Справка" Style="{StaticResource TopMenuItemStyle}">
-                <MenuItem Header="Документация" Click="MenuHelpDocs_Click"/>
-                <MenuItem Header="Горячие клавиши" Click="MenuHelpHotkeys_Click"/>
-                <MenuItem Header="О программе" Click="MenuHelpAbout_Click"/>
-            </MenuItem>
+            <MenuItem Header="Опции" Style="{StaticResource TopMenuItemStyle}"><MenuItem Header="Журнал операций" Click="MenuOptionsActionLog_Click"/></MenuItem>
+            <MenuItem Header="Справка" Style="{StaticResource TopMenuItemStyle}"><MenuItem Header="Документация" Click="MenuHelpDocs_Click"/><MenuItem Header="Горячие клавиши" Click="MenuHelpHotkeys_Click"/><MenuItem Header="О программе" Click="MenuHelpAbout_Click"/></MenuItem>
         </Menu>
-
         <Border Grid.Row="1" Background="{DynamicResource BrushPanel}" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="0,0,0,1">
             <UniformGrid Columns="3" Margin="10,6">
                 <Button x:Name="NavDatabase" Content="БД проекта" Style="{StaticResource BtnSecondary}" Margin="3,2" Click="NavDatabase_Click"/>
-                <Button x:Name="NavTemplates" Content="Шаблоны проекта" Style="{StaticResource BtnSecondary}" Margin="3,2" Click="NavTemplates_Click"/>
+                <Button x:Name="NavTemplates" Content="Структура БД" Style="{StaticResource BtnSecondary}" Margin="3,2" Click="NavTemplates_Click"/>
                 <Button x:Name="NavProject" Content="Объекты проекта" Style="{StaticResource BtnSecondary}" Margin="3,2" Click="NavProject_Click"/>
             </UniformGrid>
         </Border>
-
         <Border Grid.Row="2" Background="{DynamicResource BrushBorder}"/>
-
         <Grid Grid.Row="3" x:Name="ModeHost">
             <Grid x:Name="EditorModeView" Visibility="Visible">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition x:Name="LeftColumn" Width="292"/>
-                    <ColumnDefinition Width="1"/>
-                    <ColumnDefinition Width="*"/>
-                </Grid.ColumnDefinitions>
-                <local:LeftPanel x:Name="LeftPanelControl" Grid.Column="0"/>
-                <Border Grid.Column="1" Background="{DynamicResource BrushBorder}"/>
-                <local:RightPanel x:Name="RightPanelControl" Grid.Column="2"/>
+                <Grid.ColumnDefinitions><ColumnDefinition x:Name="LeftColumn" Width="292"/><ColumnDefinition Width="1"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                <local:LeftPanel x:Name="LeftPanelControl" Grid.Column="0"/><Border Grid.Column="1" Background="{DynamicResource BrushBorder}"/><local:RightPanel x:Name="RightPanelControl" Grid.Column="2"/>
             </Grid>
-            <Grid x:Name="Mode2View" Visibility="Collapsed" Background="{DynamicResource BrushBase}">
-                <local:TemplateArchitectureView x:Name="TemplateArchitectureControl"/>
-            </Grid>
-            <Grid x:Name="Mode3View" Visibility="Collapsed" Background="{DynamicResource BrushBase}">
-                <local:ProjectModeView x:Name="ProjectModeControl"/>
-            </Grid>
+            <Grid x:Name="Mode2View" Visibility="Collapsed" Background="{DynamicResource BrushBase}"><local:TemplateArchitectureView x:Name="TemplateArchitectureControl"/></Grid>
+            <Grid x:Name="Mode3View" Visibility="Collapsed" Background="{DynamicResource BrushBase}"><local:ProjectModeView x:Name="ProjectModeControl"/></Grid>
         </Grid>
-
-        <Border Grid.Row="4" Background="{DynamicResource BrushPanel}"
-                BorderBrush="{DynamicResource BrushBorder}" BorderThickness="0,1,0,0"
-                Padding="12,6">
+        <Border Grid.Row="4" Background="{DynamicResource BrushPanel}" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="0,1,0,0" Padding="12,6">
             <Grid>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="16"/>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
-                </Grid.ColumnDefinitions>
-                <TextBlock Grid.Column="0" Text="Configurator 4.1" VerticalAlignment="Center"
-                           Foreground="{DynamicResource BrushTextSecondary}" FontSize="10"/>
-                <TextBlock x:Name="LastActionText" Grid.Column="2" Text="Готово"
-                           VerticalAlignment="Center" Foreground="{DynamicResource BrushText}"
-                           TextTrimming="CharacterEllipsis" HorizontalAlignment="Right"
-                           TextAlignment="Right" ToolTip="Последнее действие"/>
-                <TextBlock Grid.Column="3" Text="Последнее действие" VerticalAlignment="Center"
-                           Foreground="{DynamicResource BrushTextSecondary}" FontSize="10" Margin="14,0,2,0"/>
+                <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="16"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0" Text="Configurator 4.2" VerticalAlignment="Center" Foreground="{DynamicResource BrushTextSecondary}" FontSize="10"/>
+                <TextBlock x:Name="LastActionText" Grid.Column="2" Text="Готово" VerticalAlignment="Center" Foreground="{DynamicResource BrushText}" TextTrimming="CharacterEllipsis" HorizontalAlignment="Right" TextAlignment="Right" ToolTip="Последнее действие"/>
+                <TextBlock Grid.Column="3" Text="Последнее действие" VerticalAlignment="Center" Foreground="{DynamicResource BrushTextSecondary}" FontSize="10" Margin="14,0,2,0"/>
                 <TextBlock x:Name="StatusText" Visibility="Collapsed" Text="Готово"/>
             </Grid>
         </Border>
