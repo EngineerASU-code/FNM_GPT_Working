@@ -24,7 +24,6 @@ public sealed class DatabaseArchitectureAnalyzer
         await LoadForeignKeysAsync(connection, schema, cancellationToken);
         AddCompositeEntityKeyRelations(schema);
         AddScalarConventionRelations(schema);
-        AddPolymorphicRelations(schema);
         return schema;
     }
 
@@ -110,12 +109,9 @@ ORDER BY fk.name,fkc.constraint_column_id;";
             {
                 relation = new DatabaseRelation
                 {
-                    SourceTable = $"{reader["SourceSchema"]}.{reader["SourceTable"]}",
-                    TargetTable = $"{reader["TargetSchema"]}.{reader["TargetTable"]}",
-                    Kind = DatabaseRelationKind.PhysicalForeignKey,
-                    Confidence = RelationConfidence.Confirmed,
-                    RuleId = name,
-                    Comment = "Physical SQL Server FK; authoritative."
+                    SourceTable = $"{reader["SourceSchema"]}.{reader["SourceTable"]}", TargetTable = $"{reader["TargetSchema"]}.{reader["TargetTable"]}",
+                    Kind = DatabaseRelationKind.PhysicalForeignKey, Confidence = RelationConfidence.Confirmed,
+                    RuleId = name, Comment = "Physical SQL Server FK; authoritative."
                 };
                 map[name] = relation; schema.Relations.Add(relation);
             }
@@ -126,16 +122,52 @@ ORDER BY fk.name,fkc.constraint_column_id;";
 
     private static void AddCompositeEntityKeyRelations(DatabaseSchema schema)
     {
-        var key = new[] { "PLC", "PLC_Class_Number", "Record" };
-        foreach (var source in schema.Tables.Where(t => HasColumns(t, key)))
-        foreach (var target in schema.Tables.Where(t => !ReferenceEquals(t, source) && HasColumns(t, key) && HasUniqueKey(t, key)))
-            schema.Relations.Add(new DatabaseRelation
+        var ownKey = new[] { "PLC", "PLC_Class_Number", "Record" };
+        foreach (var source in schema.Tables)
+        {
+            // Same-name entity keys are identity, not evidence of a dependency.
+            // Only contextual column names create deletion-usable relations.
+            if (HasColumns(source, new[] { "PLC", "PLC_Class_Prog_Number", "Prog_Record" }))
             {
-                SourceTable = source.FullName, TargetTable = target.FullName,
-                Kind = DatabaseRelationKind.CompositeEntityKey, Confidence = RelationConfidence.High,
-                RuleId = RelationRuleCatalog.EntityKey,
-                Comment = "Same PLC + PLC_Class_Number + Record key. No SQL FK is created."
-            }.WithColumns(key, key));
+                var target = schema.Tables.FirstOrDefault(t => t.Name.Equals("Prog", StringComparison.OrdinalIgnoreCase) && HasUniqueKey(t, ownKey));
+                if (target != null) AddContextRelation(schema, source, target,
+                    new[] { "PLC", "PLC_Class_Prog_Number", "Prog_Record" }, ownKey,
+                    "program-root-context", "Program child context resolves to Prog.(PLC, PLC_Class_Number, Record).");
+            }
+            if (HasColumns(source, new[] { "PLC", "PLC_Class_Matrix_Number", "Matrix_Record" }))
+            {
+                var target = schema.Tables.FirstOrDefault(t => t.Name.Equals("Matrix_List", StringComparison.OrdinalIgnoreCase) && HasUniqueKey(t, ownKey));
+                if (target != null) AddContextRelation(schema, source, target,
+                    new[] { "PLC", "PLC_Class_Matrix_Number", "Matrix_Record" }, ownKey,
+                    "matrix-root-context", "Matrix child context resolves to Matrix_List.(PLC, PLC_Class_Number, Record).");
+            }
+            if (HasColumns(source, new[] { "PLC", "PLC_Class_Status_Number", "Status_Record" }))
+            {
+                var target = schema.Tables.FirstOrDefault(t => t.Name.Equals("Statuses", StringComparison.OrdinalIgnoreCase) && HasUniqueKey(t, ownKey));
+                if (target != null) AddContextRelation(schema, source, target,
+                    new[] { "PLC", "PLC_Class_Status_Number", "Status_Record" }, ownKey,
+                    "status-context", "Status reference resolves by PLC + class + Record context.");
+            }
+            if (HasColumns(source, new[] { "PLC", "PLC_Class_Step_Number", "Step_Record" }))
+            {
+                var target = schema.Tables.FirstOrDefault(t => t.Name.Equals("Prog_Step", StringComparison.OrdinalIgnoreCase) && HasUniqueKey(t, ownKey));
+                if (target != null) AddContextRelation(schema, source, target,
+                    new[] { "PLC", "PLC_Class_Step_Number", "Step_Record" }, ownKey,
+                    "step-context", "Step reference resolves by PLC + step class + Record.");
+            }
+            if (HasColumns(source, new[] { "Device_PLC", "Device_PLC_Class_Number", "Device_Record", "Device_Global_Class" }))
+            {
+                var classes = schema.Tables.FirstOrDefault(t => t.Name.Equals("Classes", StringComparison.OrdinalIgnoreCase));
+                if (classes != null)
+                    schema.Relations.Add(new DatabaseRelation
+                    {
+                        SourceTable = source.FullName, TargetTable = classes.FullName,
+                        Kind = DatabaseRelationKind.PolymorphicClassReference, Confidence = RelationConfidence.High,
+                        RuleId = RelationRuleCatalog.PolymorphicClass,
+                        Comment = "Device_Global_Class chooses the concrete target table; Device_* identifies the target object."
+                    }.WithColumns(new[] { "Device_Global_Class" }, new[] { "Record" }));
+            }
+        }
     }
 
     private static void AddScalarConventionRelations(DatabaseSchema schema)
@@ -144,8 +176,35 @@ ORDER BY fk.name,fkc.constraint_column_id;";
         {
             AddScalar(schema, source, "PLC", "PLC", "Record", DatabaseRelationKind.ConventionalLookup, RelationConfidence.High, RelationRuleCatalog.PlcRecord, "PLC value resolves to PLC.Record.");
             AddScalar(schema, source, "Class", "Classes", "Record", DatabaseRelationKind.ClassLookup, RelationConfidence.High, RelationRuleCatalog.ClassRecord, "Class value resolves to Classes.Record.");
+            AddPlcClassConfiguration(schema, source);
             AddArea(schema, source); AddUnit(schema, source); AddType(schema, source);
         }
+
+        var plcCfg = schema.Tables.FirstOrDefault(t => t.Name.Equals("PLC_CFG", StringComparison.OrdinalIgnoreCase));
+        var classes = schema.Tables.FirstOrDefault(t => t.Name.Equals("Classes", StringComparison.OrdinalIgnoreCase));
+        if (plcCfg != null && classes != null && HasColumn(plcCfg, "Class_Number") && HasColumn(classes, "Record"))
+            schema.Relations.Add(new DatabaseRelation
+            {
+                SourceTable = plcCfg.FullName, TargetTable = classes.FullName,
+                Kind = DatabaseRelationKind.ClassLookup, Confidence = RelationConfidence.High,
+                RuleId = "plc-cfg-class-number", Comment = "PLC_CFG.Class_Number resolves the configured class label."
+            }.WithColumns(new[] { "Class_Number" }, new[] { "Record" }));
+    }
+
+    private static void AddPlcClassConfiguration(DatabaseSchema schema, DatabaseTable source)
+    {
+        if (!HasColumns(source, new[] { "PLC", "PLC_Class_Number" })) return;
+        var target = schema.Tables.FirstOrDefault(t =>
+            t.Name.Equals("PLC_CFG", StringComparison.OrdinalIgnoreCase) &&
+            HasColumns(t, new[] { "PLC_Number", "PLC_Class_Number" }) &&
+            HasUniqueKey(t, new[] { "PLC_Number", "PLC_Class_Number" }));
+        if (target == null) return;
+        schema.Relations.Add(new DatabaseRelation
+        {
+            SourceTable = source.FullName, TargetTable = target.FullName,
+            Kind = DatabaseRelationKind.ContextualProgramReference, Confidence = RelationConfidence.High,
+            RuleId = "plc-class-config", Comment = "Object PLC + PLC_Class_Number resolves through PLC_CFG; never map PLC_Class_Number directly to Classes."
+        }.WithColumns(new[] { "PLC", "PLC_Class_Number" }, new[] { "PLC_Number", "PLC_Class_Number" }));
     }
 
     private static void AddArea(DatabaseSchema schema, DatabaseTable source)
@@ -177,7 +236,9 @@ ORDER BY fk.name,fkc.constraint_column_id;";
     private static void AddType(DatabaseSchema schema, DatabaseTable source)
     {
         if (!HasColumn(source, "Type")) return;
-        var candidates = schema.Tables.Where(t => (t.Name.Equals(source.Name + "_Type", StringComparison.OrdinalIgnoreCase) || t.Name.Equals(source.Name + "_Types", StringComparison.OrdinalIgnoreCase)) && HasColumn(t, "Record")).ToList();
+        var candidates = schema.Tables.Where(t =>
+            (t.Name.Equals(source.Name + "_Type", StringComparison.OrdinalIgnoreCase) || t.Name.Equals(source.Name + "_Types", StringComparison.OrdinalIgnoreCase)) &&
+            HasColumn(t, "Record")).ToList();
         if (candidates.Count != 1) return;
         schema.Relations.Add(new DatabaseRelation
         {
@@ -187,17 +248,14 @@ ORDER BY fk.name,fkc.constraint_column_id;";
         }.WithColumns(new[] { "Type" }, new[] { "Record" }));
     }
 
-    private static void AddPolymorphicRelations(DatabaseSchema schema)
+    private static void AddContextRelation(DatabaseSchema schema, DatabaseTable source, DatabaseTable target, IEnumerable<string> sourceColumns, IEnumerable<string> targetColumns, string ruleId, string comment)
     {
-        var classes = schema.Tables.FirstOrDefault(t => t.Name.Equals("Classes", StringComparison.OrdinalIgnoreCase));
-        if (classes == null || !HasColumns(classes, new[] { "Record", "DBName" })) return;
-        foreach (var table in schema.Tables.Where(t => HasColumn(t, "Device_Global_Class") && HasColumns(t, new[] { "Device_PLC", "Device_PLC_Class_Number", "Device_Record" })))
-            schema.Relations.Add(new DatabaseRelation
-            {
-                SourceTable = table.FullName, TargetTable = classes.FullName, Kind = DatabaseRelationKind.PolymorphicClassReference,
-                Confidence = RelationConfidence.High, RuleId = RelationRuleCatalog.PolymorphicClass,
-                Comment = "Device_Global_Class resolves to Classes.Record; Classes.DBName selects concrete target table."
-            }.WithColumns(new[] { "Device_Global_Class" }, new[] { "Record" }));
+        schema.Relations.Add(new DatabaseRelation
+        {
+            SourceTable = source.FullName, TargetTable = target.FullName,
+            Kind = DatabaseRelationKind.ContextualProgramReference, Confidence = RelationConfidence.High,
+            RuleId = ruleId, Comment = comment
+        }.WithColumns(sourceColumns, targetColumns));
     }
 
     private static bool IsComplexName(string tableName) => tableName.StartsWith("Prog", StringComparison.OrdinalIgnoreCase) || tableName.StartsWith("Matrix", StringComparison.OrdinalIgnoreCase);
