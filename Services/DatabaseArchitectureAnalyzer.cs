@@ -24,6 +24,7 @@ public sealed class DatabaseArchitectureAnalyzer
         await LoadForeignKeysAsync(connection, schema, cancellationToken);
         AddCompositeEntityKeyRelations(schema);
         AddScalarConventionRelations(schema);
+        KnownProjectRelationRules.Add(schema);
         return schema;
     }
 
@@ -125,35 +126,25 @@ ORDER BY fk.name,fkc.constraint_column_id;";
         var ownKey = new[] { "PLC", "PLC_Class_Number", "Record" };
         foreach (var source in schema.Tables)
         {
-            // Same-name entity keys are identity, not evidence of a dependency.
-            // Only contextual column names create deletion-usable relations.
             if (HasColumns(source, new[] { "PLC", "PLC_Class_Prog_Number", "Prog_Record" }))
             {
                 var target = schema.Tables.FirstOrDefault(t => t.Name.Equals("Prog", StringComparison.OrdinalIgnoreCase) && HasUniqueKey(t, ownKey));
-                if (target != null) AddContextRelation(schema, source, target,
-                    new[] { "PLC", "PLC_Class_Prog_Number", "Prog_Record" }, ownKey,
-                    "program-root-context", "Program child context resolves to Prog.(PLC, PLC_Class_Number, Record).");
+                if (target != null) AddContextRelation(schema, source, target, new[] { "PLC", "PLC_Class_Prog_Number", "Prog_Record" }, ownKey, "program-root-context", "Program child context resolves to Prog.(PLC, PLC_Class_Number, Record).");
             }
             if (HasColumns(source, new[] { "PLC", "PLC_Class_Matrix_Number", "Matrix_Record" }))
             {
                 var target = schema.Tables.FirstOrDefault(t => t.Name.Equals("Matrix_List", StringComparison.OrdinalIgnoreCase) && HasUniqueKey(t, ownKey));
-                if (target != null) AddContextRelation(schema, source, target,
-                    new[] { "PLC", "PLC_Class_Matrix_Number", "Matrix_Record" }, ownKey,
-                    "matrix-root-context", "Matrix child context resolves to Matrix_List.(PLC, PLC_Class_Number, Record).");
+                if (target != null) AddContextRelation(schema, source, target, new[] { "PLC", "PLC_Class_Matrix_Number", "Matrix_Record" }, ownKey, "matrix-root-context", "Matrix child context resolves to Matrix_List.(PLC, PLC_Class_Number, Record).");
             }
             if (HasColumns(source, new[] { "PLC", "PLC_Class_Status_Number", "Status_Record" }))
             {
                 var target = schema.Tables.FirstOrDefault(t => t.Name.Equals("Statuses", StringComparison.OrdinalIgnoreCase) && HasUniqueKey(t, ownKey));
-                if (target != null) AddContextRelation(schema, source, target,
-                    new[] { "PLC", "PLC_Class_Status_Number", "Status_Record" }, ownKey,
-                    "status-context", "Status reference resolves by PLC + class + Record context.");
+                if (target != null) AddContextRelation(schema, source, target, new[] { "PLC", "PLC_Class_Status_Number", "Status_Record" }, ownKey, "status-context", "Status reference resolves by PLC + class + Record context.");
             }
             if (HasColumns(source, new[] { "PLC", "PLC_Class_Step_Number", "Step_Record" }))
             {
                 var target = schema.Tables.FirstOrDefault(t => t.Name.Equals("Prog_Step", StringComparison.OrdinalIgnoreCase) && HasUniqueKey(t, ownKey));
-                if (target != null) AddContextRelation(schema, source, target,
-                    new[] { "PLC", "PLC_Class_Step_Number", "Step_Record" }, ownKey,
-                    "step-context", "Step reference resolves by PLC + step class + Record.");
+                if (target != null) AddContextRelation(schema, source, target, new[] { "PLC", "PLC_Class_Step_Number", "Step_Record" }, ownKey, "step-context", "Step reference resolves by PLC + step class + Record.");
             }
             if (HasColumns(source, new[] { "Device_PLC", "Device_PLC_Class_Number", "Device_Record", "Device_Global_Class" }))
             {
@@ -194,10 +185,7 @@ ORDER BY fk.name,fkc.constraint_column_id;";
     private static void AddPlcClassConfiguration(DatabaseSchema schema, DatabaseTable source)
     {
         if (!HasColumns(source, new[] { "PLC", "PLC_Class_Number" })) return;
-        var target = schema.Tables.FirstOrDefault(t =>
-            t.Name.Equals("PLC_CFG", StringComparison.OrdinalIgnoreCase) &&
-            HasColumns(t, new[] { "PLC_Number", "PLC_Class_Number" }) &&
-            HasUniqueKey(t, new[] { "PLC_Number", "PLC_Class_Number" }));
+        var target = schema.Tables.FirstOrDefault(t => t.Name.Equals("PLC_CFG", StringComparison.OrdinalIgnoreCase) && HasColumns(t, new[] { "PLC_Number", "PLC_Class_Number" }) && HasUniqueKey(t, new[] { "PLC_Number", "PLC_Class_Number" }));
         if (target == null) return;
         schema.Relations.Add(new DatabaseRelation
         {
@@ -236,9 +224,7 @@ ORDER BY fk.name,fkc.constraint_column_id;";
     private static void AddType(DatabaseSchema schema, DatabaseTable source)
     {
         if (!HasColumn(source, "Type")) return;
-        var candidates = schema.Tables.Where(t =>
-            (t.Name.Equals(source.Name + "_Type", StringComparison.OrdinalIgnoreCase) || t.Name.Equals(source.Name + "_Types", StringComparison.OrdinalIgnoreCase)) &&
-            HasColumn(t, "Record")).ToList();
+        var candidates = schema.Tables.Where(t => (t.Name.Equals(source.Name + "_Type", StringComparison.OrdinalIgnoreCase) || t.Name.Equals(source.Name + "_Types", StringComparison.OrdinalIgnoreCase)) && HasColumn(t, "Record")).ToList();
         if (candidates.Count != 1) return;
         schema.Relations.Add(new DatabaseRelation
         {
