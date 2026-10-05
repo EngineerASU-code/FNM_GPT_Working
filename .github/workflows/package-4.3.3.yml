@@ -1,0 +1,32 @@
+name: Package 4.3.3 test ZIP
+
+on:
+  push:
+    branches: [ main ]
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Package source
+        run: |
+          rm -f Configurator_v4.3.3.zip
+          cd src-v4.0
+          zip -qr ../Configurator_v4.3.3.zip . -x 'bin/*' 'obj/*'
+          cd ..
+          unzip -t Configurator_v4.3.3.zip
+
+      - name: Commit ZIP and remove temporary workflow
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Configurator_v4.3.3.zip
+          git rm .github/workflows/package-4.3.3.yml
+          git commit -m "Package Configurator 4.3.3 test ZIP"
+          git push
