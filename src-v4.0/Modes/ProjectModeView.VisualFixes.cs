@@ -36,7 +36,10 @@ public partial class ProjectModeView
     {
         var view = (ProjectModeView)sender;
         if (e.OriginalSource == view.ObjectList)
+        {
+            view.ObjectEditor.Visibility = Visibility.Collapsed;
             view.Dispatcher.BeginInvoke(new Action(() => view.RenderActualObjectCardAsync()), DispatcherPriority.ContextIdle);
+        }
     }
 
     private static void ObjectVisualButtonClicked(object sender, RoutedEventArgs e)
@@ -48,40 +51,52 @@ public partial class ProjectModeView
 
     private async void RenderActualObjectCardAsync()
     {
-        if (_selectedRow == null || _selectedClass == null || _connection == null || string.IsNullOrWhiteSpace(_selectedDatabase)) return;
-
-        ObjectEditor.Children.Clear();
-        ObjectEditor.ColumnDefinitions.Clear();
-        ObjectEditor.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star), MinWidth = 430 });
-
-        TxtObjectName.Text = PickName(_selectedRow, _selectedClass);
-        string plc = GetText("PLC");
-        string record = GetText("Record");
-        TxtObjectMeta.Text = string.IsNullOrWhiteSpace(plc) && string.IsNullOrWhiteSpace(record)
-            ? $"Класс: {_selectedClass.Name} · все поля текущей таблицы"
-            : $"Класс: {_selectedClass.Name} · PLC {plc} · Record {record}";
-        TxtPreviewGlyph.Text = _selectedClass.Name.Length > 3 ? _selectedClass.Name[..3].ToUpperInvariant() : _selectedClass.Name.ToUpperInvariant();
-        TxtPreviewClass.Text = _selectedClass.Name;
+        if (_selectedRow == null || _selectedClass == null || _connection == null || string.IsNullOrWhiteSpace(_selectedDatabase))
+        {
+            ObjectEditor.Visibility = Visibility.Visible;
+            return;
+        }
 
         var fields = _objects.Columns.Cast<DataColumn>()
             .Select(c => _selectedClass.Fields.FirstOrDefault(f => f.Name.Equals(c.ColumnName, StringComparison.OrdinalIgnoreCase))
                 ?? new FieldDefinition { Name = c.ColumnName, DataType = c.DataType.Name, Group = "Прочее" })
             .ToList();
 
+        var lookup = new LookupOptionsService(new DatabaseService(_connection.ToConnectionString(_selectedDatabase)));
+        var lookupTasks = new Dictionary<string, Task<IReadOnlyList<LookupOption>>>(StringComparer.OrdinalIgnoreCase);
+        foreach (var field in fields)
+        {
+            if (!lookupTasks.ContainsKey(field.Name))
+                lookupTasks[field.Name] = TryLoadLookupAsync(lookup, field.Name);
+        }
+
+        // Resolve all linked lists before touching the visual tree. Previously the
+        // editor was cleared and then rebuilt after every awaited lookup, which
+        // produced the visible "Config first, everything else later" flicker.
+        await Task.WhenAll(lookupTasks.Values);
+
+        ObjectEditor.Children.Clear();
+        ObjectEditor.ColumnDefinitions.Clear();
+        ObjectEditor.RowDefinitions.Clear();
+        ObjectEditor.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star), MinWidth = 430 });
+
+        TxtObjectName.Text = PickName(_selectedRow, _selectedClass);
+        string plc = GetText("PLC");
+        string record = GetText("Record");
+        string area = GetText("Area");
+        TxtObjectMeta.Text = string.IsNullOrWhiteSpace(plc) && string.IsNullOrWhiteSpace(record)
+            ? $"Класс: {_selectedClass.Name} · все поля текущей таблицы"
+            : $"Класс: {_selectedClass.Name} · PLC {plc} · Record {record} · Area {area}";
+        TxtPreviewGlyph.Text = _selectedClass.Name.Length > 3 ? _selectedClass.Name[..3].ToUpperInvariant() : _selectedClass.Name.ToUpperInvariant();
+        TxtPreviewClass.Text = _selectedClass.Name;
+
         var groups = fields
             .Select(f => new { Field = f, Group = ResolveObjectGroup(f.Name) })
             .GroupBy(x => x.Group, StringComparer.OrdinalIgnoreCase)
-            .OrderBy(g => g.Key.Equals("Object", StringComparison.OrdinalIgnoreCase) ? 0
-                : g.Key.Equals("Visual", StringComparison.OrdinalIgnoreCase) ? 1
-                : g.Key.Equals("Config", StringComparison.OrdinalIgnoreCase) ? 2
-                : g.Key.Equals("Conditions", StringComparison.OrdinalIgnoreCase) ? 3
-                : g.Key.Equals("Parameters", StringComparison.OrdinalIgnoreCase) ? 4
-                : g.Key.Equals("Address", StringComparison.OrdinalIgnoreCase) ? 5
-                : g.Key.Equals("Прочее", StringComparison.OrdinalIgnoreCase) ? 100 : 50)
+            .OrderBy(g => GroupOrder(g.Key))
             .ThenBy(g => g.Key, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
-        var lookup = new LookupOptionsService(new DatabaseService(_connection.ToConnectionString(_selectedDatabase)));
         foreach (var group in groups)
         {
             var card = new Border
@@ -117,13 +132,8 @@ public partial class ProjectModeView
                 label.SetResourceReference(TextBlock.ForegroundProperty, "BrushTextSecondary");
                 fieldStack.Children.Add(label);
 
-                IReadOnlyList<LookupOption> options = Array.Empty<LookupOption>();
-                try
-                {
-                    options = await lookup.TryGetAsync(_selectedClass.Name, _selectedClass.PrimaryStorage?.TableName, item.Field.Name);
-                }
-                catch { }
-
+                lookupTasks.TryGetValue(item.Field.Name, out var task);
+                var options = task?.Result ?? Array.Empty<LookupOption>();
                 if (options.Count > 0)
                 {
                     var combo = new ComboBox
@@ -163,11 +173,32 @@ public partial class ProjectModeView
 
             stack.Children.Add(grid);
             card.Child = stack;
+            ObjectEditor.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            Grid.SetRow(card, ObjectEditor.RowDefinitions.Count - 1);
             ObjectEditor.Children.Add(card);
         }
 
         TxtStatus.Text = $"{_selectedClass.Name} · {_objects.Rows.Count} объектов · {_objects.Columns.Count} полей текущей таблицы";
+        ObjectEditor.Visibility = Visibility.Visible;
     }
+
+    private static async Task<IReadOnlyList<LookupOption>> TryLoadLookupAsync(LookupOptionsService lookup, string fieldName)
+    {
+        try { return await lookup.TryGetAsync("", null, fieldName); }
+        catch { return Array.Empty<LookupOption>(); }
+    }
+
+    private static int GroupOrder(string group) => group switch
+    {
+        "Object" => 0,
+        "Visual" => 1,
+        "Config" => 2,
+        "Conditions" => 3,
+        "Parameters" => 4,
+        "Address" => 5,
+        "Прочее" => 100,
+        _ => 50
+    };
 
     private string ResolveObjectGroup(string fieldName)
     {
