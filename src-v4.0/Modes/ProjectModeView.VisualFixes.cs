@@ -7,6 +7,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Threading;
+using Configurator.Core.Architecture;
 
 namespace Configurator;
 
@@ -64,7 +65,7 @@ public partial class ProjectModeView
 
         var fields = _objects.Columns.Cast<DataColumn>()
             .Select(c => _selectedClass.Fields.FirstOrDefault(f => f.Name.Equals(c.ColumnName, StringComparison.OrdinalIgnoreCase))
-                ?? new Core.Architecture.FieldDefinition { Name = c.ColumnName, DataType = c.DataType.Name, Group = "Прочее" })
+                ?? new FieldDefinition { Name = c.ColumnName, DataType = c.DataType.Name, Group = "Прочее" })
             .ToList();
 
         var groups = fields
