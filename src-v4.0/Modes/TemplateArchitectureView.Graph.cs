@@ -1,16 +1,23 @@
 using System;
+using System.Windows;
 
 namespace Configurator;
 
 public partial class TemplateArchitectureView
 {
-    private void GraphHost_Loaded(object sender, System.Windows.RoutedEventArgs e)
-        => RefreshGraphFromCurrentProject();
+    static TemplateArchitectureView()
+    {
+        EventManager.RegisterClassHandler(typeof(TemplateArchitectureView), FrameworkElement.LoadedEvent, new RoutedEventHandler(GraphHost_LoadedStatic));
+        EventManager.RegisterClassHandler(typeof(TemplateArchitectureView), UIElement.IsVisibleChangedEvent, new DependencyPropertyChangedEventHandler(GraphHost_IsVisibleChangedStatic));
+    }
 
-    private void GraphHost_IsVisibleChanged(object sender, System.Windows.DependencyPropertyChangedEventArgs e)
+    private static void GraphHost_LoadedStatic(object sender, RoutedEventArgs e)
+        => ((TemplateArchitectureView)sender).RefreshGraphFromCurrentProject();
+
+    private static void GraphHost_IsVisibleChangedStatic(object sender, DependencyPropertyChangedEventArgs e)
     {
         if (e.NewValue is bool visible && visible)
-            RefreshGraphFromCurrentProject();
+            ((TemplateArchitectureView)sender).RefreshGraphFromCurrentProject();
     }
 
     private void RefreshGraphFromCurrentProject()
