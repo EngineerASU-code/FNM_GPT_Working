@@ -3,9 +3,11 @@
     <OutputType>WinExe</OutputType>
     <TargetFramework>net8.0-windows</TargetFramework>
     <UseWPF>True</UseWPF>
-
     <Nullable>disable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <Version>4.0.0</Version>
+    <AssemblyVersion>4.0.0.0</AssemblyVersion>
+    <FileVersion>4.0.0.0</FileVersion>
   </PropertyGroup>
   <ItemGroup>
     <Compile Remove="App\**" />
@@ -14,7 +16,6 @@
     <Page Remove="App\**" />
   </ItemGroup>
   <ItemGroup>
-    <!-- Оставляем только эту строку -->
     <PackageReference Include="Microsoft.Data.SqlClient" Version="7.1.0" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
   </ItemGroup>
