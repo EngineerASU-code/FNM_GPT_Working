@@ -4,6 +4,7 @@ using System.Data;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Threading;
 using Configurator.Core.Architecture;
 
@@ -44,6 +45,7 @@ public partial class ProjectModeView
 
         ObjectEditor.Children.Clear();
         ObjectEditor.ColumnDefinitions.Clear();
+        ObjectEditor.RowDefinitions.Clear();
         ObjectEditor.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star), MinWidth = 300 });
         ObjectEditor.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star), MinWidth = 300 });
 
@@ -60,26 +62,16 @@ public partial class ProjectModeView
             .OrderBy(g => GroupOrder(g.Key))
             .ToList();
 
-        int cardIndex = 0;
-        foreach (var group in groups)
-        {
-            var card = BuildObjectGroupCard(group.Key, group.ToList());
-            Grid.SetColumn(card, cardIndex % 2);
-            Grid.SetRow(card, cardIndex / 2);
-            ObjectEditor.Children.Add(card);
-            cardIndex++;
-        }
-
-        int rows = Math.Max(1, (int)Math.Ceiling(cardIndex / 2d));
-        // ObjectEditor is a Grid, so explicit row definitions are required when
-        // more than two groups are present.
-        ObjectEditor.RowDefinitions.Clear();
+        int rows = Math.Max(1, (int)Math.Ceiling(groups.Count / 2d));
         for (int i = 0; i < rows; i++)
             ObjectEditor.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        for (int i = 0; i < ObjectEditor.Children.Count; i++)
+
+        for (int i = 0; i < groups.Count; i++)
         {
-            Grid.SetColumn(ObjectEditor.Children[i], i % 2);
-            Grid.SetRow(ObjectEditor.Children[i], i / 2);
+            var card = BuildObjectGroupCard(groups[i].Key, groups[i].ToList());
+            Grid.SetColumn(card, i % 2);
+            Grid.SetRow(card, i / 2);
+            ObjectEditor.Children.Add(card);
         }
 
         ObjectEditor.Visibility = Visibility.Visible;
