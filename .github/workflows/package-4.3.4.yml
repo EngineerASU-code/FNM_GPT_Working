@@ -1,6 +1,7 @@
 name: Package 4.3.4
 on:
-  workflow_dispatch:
+  push:
+    branches: [ main ]
 jobs:
   package:
     runs-on: windows-latest
