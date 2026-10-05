@@ -1,0 +1,30 @@
+name: Extract v4 source
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/extract-v4-source.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  extract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Extract 3.16.4 into v4-source branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          rm -rf /tmp/v4src
+          mkdir -p /tmp/v4src
+          unzip -q Configurator_v3.16.4.zip -d /tmp/v4src
+          git fetch origin v4-source:v4-source || true
+          git checkout -B v4-source
+          find . -mindepth 1 -maxdepth 1 ! -name '.git' ! -name '.github' -exec rm -rf {} +
+          cp -a /tmp/v4src/. .
+          git add -A
+          git commit -m "chore: extract 3.16.4 source for v4 architecture" || true
+          git push -u origin v4-source
