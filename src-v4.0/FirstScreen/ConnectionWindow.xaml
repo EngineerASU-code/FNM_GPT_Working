@@ -11,7 +11,29 @@
             <StackPanel Grid.Column="2"><TextBlock Text="Пароль" FontWeight="SemiBold" Foreground="{DynamicResource BrushText}" Margin="0,0,0,6"/><PasswordBox x:Name="PwdBox"/></StackPanel>
         </Grid>
         <TextBlock Grid.Row="5" Text="База данных" FontWeight="SemiBold" Foreground="{DynamicResource BrushText}" Margin="0,18,0,6"/>
-        <ComboBox Grid.Row="6" x:Name="CmbDatabase" Margin="0,0,0,16"/>
+        <ComboBox Grid.Row="6" x:Name="CmbDatabase" Margin="0,0,0,16">
+            <ComboBox.ItemContainerStyle>
+                <Style TargetType="ComboBoxItem">
+                    <Setter Property="Background" Value="{DynamicResource BrushPanel}"/>
+                    <Setter Property="Foreground" Value="{DynamicResource BrushText}"/>
+                    <Setter Property="Padding" Value="9,7"/>
+                    <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                    <Setter Property="Template">
+                        <Setter.Value>
+                            <ControlTemplate TargetType="ComboBoxItem">
+                                <Border x:Name="ItemBorder" Background="{TemplateBinding Background}" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" CornerRadius="6" Padding="{TemplateBinding Padding}" Margin="1">
+                                    <ContentPresenter ContentSource="Content" VerticalAlignment="Center" TextElement.Foreground="{TemplateBinding Foreground}"/>
+                                </Border>
+                                <ControlTemplate.Triggers>
+                                    <Trigger Property="IsHighlighted" Value="True"><Setter TargetName="ItemBorder" Property="Background" Value="{DynamicResource BrushHover}"/><Setter TargetName="ItemBorder" Property="BorderBrush" Value="{DynamicResource BrushAccent}"/></Trigger>
+                                    <Trigger Property="IsSelected" Value="True"><Setter TargetName="ItemBorder" Property="Background" Value="{DynamicResource BrushSelected}"/><Setter TargetName="ItemBorder" Property="BorderBrush" Value="{DynamicResource BrushAccent}"/><Setter Property="Foreground" Value="{DynamicResource BrushText}"/></Trigger>
+                                </ControlTemplate.Triggers>
+                            </ControlTemplate>
+                        </Setter.Value>
+                    </Setter>
+                </Style>
+            </ComboBox.ItemContainerStyle>
+        </ComboBox>
         <Grid Grid.Row="7">
             <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="10"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
             <Button Grid.Column="0" x:Name="BtnConnect" Content="Проверить подключение" Style="{StaticResource BtnPrimary}" Click="BtnConnect_Click"/>
