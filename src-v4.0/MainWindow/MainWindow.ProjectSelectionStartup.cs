@@ -25,6 +25,7 @@ public partial class MainWindow
         if (!string.IsNullOrWhiteSpace(window._selectedDbName)) return;
         if (window.GetActiveDatabases().Count == 0) return;
 
+        // 4.3.3: ask for a project on first entry into modes 2/3.
         window.Dispatcher.BeginInvoke(new Action(() =>
         {
             if (string.IsNullOrWhiteSpace(window._selectedDbName))
