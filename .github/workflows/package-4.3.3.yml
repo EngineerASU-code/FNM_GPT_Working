@@ -1,0 +1,33 @@
+name: Package Configurator 4.3.3
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src-v4.0/**'
+      - '.github/workflows/package-4.3.3.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create source archive
+        shell: pwsh
+        run: |
+          if (Test-Path Configurator_v4.3.3.zip) { Remove-Item Configurator_v4.3.3.zip -Force }
+          $items = Get-ChildItem src-v4.0 -Force | Where-Object { $_.Name -notin @('bin','obj') }
+          Compress-Archive -Path $items.FullName -DestinationPath Configurator_v4.3.3.zip -Force
+      - name: Publish archive and remove one-off packager
+        shell: bash
+        run: |
+          set -e
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Configurator_v4.3.3.zip
+          git rm .github/workflows/package-4.3.3.yml
+          git commit -m "release: Configurator 4.3.3 source archive"
+          git push origin main
