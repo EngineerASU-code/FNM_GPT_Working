@@ -31,14 +31,17 @@ jobs:
         shell: pwsh
         run: |
           if (Test-Path Configurator_v4.0.zip) { Remove-Item Configurator_v4.0.zip -Force }
-          Compress-Archive -Path * -DestinationPath Configurator_v4.0.zip -Force
+          $items = Get-ChildItem -Force | Where-Object { $_.Name -notin @('.git','bin','obj','Configurator_v4.0.zip') }
+          Compress-Archive -Path $items.FullName -DestinationPath Configurator_v4.0.zip -Force
       - name: Publish archive to main
         shell: bash
         run: |
+          set -e
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git fetch origin main
           cp Configurator_v4.0.zip /tmp/Configurator_v4.0.zip
+          git fetch origin main
+          rm -f Configurator_v4.0.zip
           git checkout main
           cp /tmp/Configurator_v4.0.zip Configurator_v4.0.zip
           git add Configurator_v4.0.zip
