@@ -15,10 +15,11 @@ public partial class ProjectModeView
     {
         if (_selectedRow == null || _selectedClass == null || _connection == null || string.IsNullOrWhiteSpace(_selectedDatabase)) return;
 
+        // One continuous editor column: every field remains visible and there are
+        // no empty alternating group columns on wide screens.
         ObjectEditor.Children.Clear();
         ObjectEditor.ColumnDefinitions.Clear();
-        ObjectEditor.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star), MinWidth = 300 });
-        ObjectEditor.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star), MinWidth = 300 });
+        ObjectEditor.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star), MinWidth = 500 });
 
         TxtObjectName.Text = PickName(_selectedRow, _selectedClass);
         string plc = GetText("PLC");
@@ -33,6 +34,7 @@ public partial class ProjectModeView
             .Select(c => _selectedClass.Fields.FirstOrDefault(f => f.Name.Equals(c.ColumnName, StringComparison.OrdinalIgnoreCase))
                          ?? new Core.Architecture.FieldDefinition { Name = c.ColumnName, DataType = c.DataType.Name, Group = "Прочее" })
             .ToList();
+
         var grouped = actualFields
             .Select(f => new { Field = f, Group = ResolveDisplayGroupForObject(f) })
             .GroupBy(x => x.Group, StringComparer.OrdinalIgnoreCase)
@@ -41,32 +43,68 @@ public partial class ProjectModeView
             .ToList();
 
         var lookups = new LookupOptionsService(new DatabaseService(_connection.ToConnectionString(_selectedDatabase)));
-        int column = 0;
         foreach (var group in grouped)
         {
-            var card = new Border { Margin = new Thickness(column == 0 ? 0 : 6, 0, 0, 8), Padding = new Thickness(10), CornerRadius = new CornerRadius(8), HorizontalAlignment = HorizontalAlignment.Stretch };
+            var card = new Border
+            {
+                Margin = new Thickness(0, 0, 0, 9),
+                Padding = new Thickness(12),
+                CornerRadius = new CornerRadius(8),
+                HorizontalAlignment = HorizontalAlignment.Stretch
+            };
             card.SetResourceReference(Border.BackgroundProperty, "BrushBase");
             card.SetResourceReference(Border.BorderBrushProperty, "BrushBorder");
             card.BorderThickness = new Thickness(1);
-            var stack = new StackPanel();
-            var title = new TextBlock { Text = group.Key, FontSize = 12, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 0, 0, 7) };
+
+            var content = new Grid();
+            content.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star), MinWidth = 360 });
+            content.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star), MinWidth = 360 });
+            content.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+            var title = new TextBlock { Text = group.Key, FontSize = 12, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 0, 0, 8) };
             title.SetResourceReference(TextBlock.ForegroundProperty, "BrushText");
-            stack.Children.Add(title);
+            Grid.SetColumnSpan(title, 2);
+            content.Children.Add(title);
+
+            int index = 0;
             foreach (var item in group)
             {
+                int row = 1 + index / 2;
+                int col = index % 2;
+                while (content.RowDefinitions.Count <= row) content.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
                 var field = item.Field;
-                var row = new Grid { Margin = new Thickness(0, 0, 0, 6) };
-                row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(0.9, GridUnitType.Star), MinWidth = 110 });
-                row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1.1, GridUnitType.Star), MinWidth = 150 });
-                var label = new TextBlock { Text = field.Name, FontSize = 10, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis, ToolTip = field.Name };
+                var rowPanel = new Grid { Margin = new Thickness(col == 0 ? 0 : 7, 0, col == 0 ? 7 : 0, 7) };
+                rowPanel.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(0.75, GridUnitType.Star), MinWidth = 110 });
+                rowPanel.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1.25, GridUnitType.Star), MinWidth = 180 });
+
+                var label = new TextBlock
+                {
+                    Text = field.Name,
+                    FontSize = 10,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    TextTrimming = TextTrimming.CharacterEllipsis,
+                    ToolTip = $"{field.Name} · тип: {field.DataType}"
+                };
                 label.SetResourceReference(TextBlock.ForegroundProperty, "BrushTextSecondary");
                 Grid.SetColumn(label, 0);
-                row.Children.Add(label);
+                rowPanel.Children.Add(label);
+
                 FrameworkElement editor;
                 var options = await lookups.TryGetAsync(_selectedClass.Name, _selectedClass.PrimaryStorage?.TableName, field.Name);
                 if (options.Count > 0)
                 {
-                    var combo = new ComboBox { Height = 30, Padding = new Thickness(6, 2, 6, 2), Tag = field.Name, ItemsSource = options, DisplayMemberPath = nameof(LookupOption.Display), SelectedValuePath = nameof(LookupOption.Key), SelectedValue = GetText(field.Name), ToolTip = $"{field.Name}: список связанных значений" };
+                    var combo = new ComboBox
+                    {
+                        Height = 30,
+                        Padding = new Thickness(6, 2, 6, 2),
+                        Tag = field.Name,
+                        ItemsSource = options,
+                        DisplayMemberPath = nameof(LookupOption.Display),
+                        SelectedValuePath = nameof(LookupOption.Key),
+                        SelectedValue = GetText(field.Name),
+                        ToolTip = $"{field.Name}: связанный справочник ({options.Count} знач.)"
+                    };
                     combo.SetResourceReference(Control.BackgroundProperty, "BrushPanel");
                     combo.SetResourceReference(Control.ForegroundProperty, "BrushText");
                     combo.SetResourceReference(Control.BorderBrushProperty, "BrushBorder");
@@ -74,22 +112,35 @@ public partial class ProjectModeView
                 }
                 else
                 {
-                    var box = new TextBox { Text = GetText(field.Name), Height = 30, Padding = new Thickness(7, 3, 7, 3), Tag = field.Name, TextWrapping = TextWrapping.NoWrap, HorizontalContentAlignment = HorizontalAlignment.Left, ToolTip = $"{field.Name}: {GetText(field.Name)}" };
+                    var box = new TextBox
+                    {
+                        Text = GetText(field.Name),
+                        Height = 30,
+                        Padding = new Thickness(7, 3, 7, 3),
+                        Tag = field.Name,
+                        TextWrapping = TextWrapping.NoWrap,
+                        HorizontalContentAlignment = HorizontalAlignment.Left,
+                        ToolTip = $"{field.Name} · тип: {field.DataType}"
+                    };
                     box.SetResourceReference(Control.BackgroundProperty, "BrushPanel");
                     box.SetResourceReference(Control.ForegroundProperty, "BrushText");
                     box.SetResourceReference(Control.BorderBrushProperty, "BrushBorder");
                     editor = box;
                 }
                 Grid.SetColumn(editor, 1);
-                row.Children.Add(editor);
-                stack.Children.Add(row);
+                rowPanel.Children.Add(editor);
+                Grid.SetColumn(rowPanel, col);
+                Grid.SetRow(rowPanel, row);
+                content.Children.Add(rowPanel);
+                index++;
             }
-            card.Child = stack;
-            Grid.SetColumn(card, column);
+
+            card.Child = content;
+            Grid.SetColumn(card, 0);
             ObjectEditor.Children.Add(card);
-            column = column == 0 ? 1 : 0;
         }
-        TxtStatus.Text = $"{_selectedClass.Name} · показаны все {actualFields.Count} полей · связанные поля доступны списками";
+
+        TxtStatus.Text = $"{_selectedClass.Name} · показаны все {actualFields.Count} полей · связанные поля — выпадающие списки";
     }
 
     private string ResolveDisplayGroupForObject(Core.Architecture.FieldDefinition field)
@@ -123,10 +174,7 @@ public partial class ProjectModeView
             await RenderLookupObjectDetailsAsyncTask();
             TxtStatus.Text = "Объект сохранён · связанные поля проверены по справочникам";
         }
-        catch (Exception ex)
-        {
-            MessageBox.Show(ex.Message, "Сохранение объекта", MessageBoxButton.OK, MessageBoxImage.Error);
-        }
+        catch (Exception ex) { MessageBox.Show(ex.Message, "Сохранение объекта", MessageBoxButton.OK, MessageBoxImage.Error); }
     }
 
     private async Task RenderLookupObjectDetailsAsyncTask()

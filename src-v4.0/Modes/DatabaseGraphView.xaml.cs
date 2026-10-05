@@ -21,10 +21,7 @@ public partial class DatabaseGraphView : UserControl
     private readonly List<GraphRelation> _relations = new();
     private string _selectedTable;
 
-    public DatabaseGraphView()
-    {
-        InitializeComponent();
-    }
+    public DatabaseGraphView() => InitializeComponent();
 
     public void Configure(ConnectionSettings connection, string database)
     {
@@ -34,15 +31,9 @@ public partial class DatabaseGraphView : UserControl
         _ = LoadGraphAsync();
     }
 
-    public async Task RefreshAsync()
-    {
-        await LoadGraphAsync();
-    }
+    public async Task RefreshAsync() => await LoadGraphAsync();
 
-    private async void Refresh_Click(object sender, RoutedEventArgs e)
-    {
-        await LoadGraphAsync();
-    }
+    private async void Refresh_Click(object sender, RoutedEventArgs e) => await LoadGraphAsync();
 
     private async Task LoadGraphAsync()
     {
@@ -54,22 +45,24 @@ public partial class DatabaseGraphView : UserControl
 
         try
         {
-            TxtGraphStatus.Text = "Читаем структуру БД...";
-            var connectionString = _connection.ToConnectionString(_database);
+            TxtGraphStatus.Text = $"Читаем структуру БД «{_database}»...";
+            var cs = _connection.ToConnectionString(_database);
             if (!await _connection.TestConnectionAsync(_database))
             {
                 ClearGraph($"Связь с БД «{_database}» потеряна.");
                 return;
             }
 
-            var loaded = await Task.Run(() => ReadSchema(connectionString));
+            var loaded = await Task.Run(() => ReadSchema(cs));
             _tables.Clear();
             _tables.AddRange(loaded.tables);
             _relations.Clear();
             _relations.AddRange(loaded.relations);
-
             RenderGraph();
-            TxtGraphStatus.Text = $"Таблиц: {_tables.Count} · связей: {_relations.Count} · физические FK и обнаруженные логические связи";
+
+            int physical = _relations.Count(x => x.Kind.Equals("FK", StringComparison.OrdinalIgnoreCase));
+            int logical = _relations.Count - physical;
+            TxtGraphStatus.Text = $"Таблиц: {_tables.Count} · связей: {_relations.Count} · PK/FK: {physical} · логических: {logical}";
         }
         catch (Exception ex)
         {
@@ -90,7 +83,6 @@ public partial class DatabaseGraphView : UserControl
     {
         var tables = new Dictionary<string, GraphTable>(StringComparer.OrdinalIgnoreCase);
         var relations = new Dictionary<string, GraphRelation>(StringComparer.OrdinalIgnoreCase);
-
         using var connection = new SqlConnection(cs);
         connection.Open();
 
@@ -118,17 +110,15 @@ ORDER BY t.TABLE_NAME, c.ORDINAL_POSITION;", connection))
                     table = new GraphTable { FullName = key, Name = name };
                     tables[key] = table;
                 }
-                table.Columns.Add(Convert.ToString(reader["COLUMN_NAME"]) ?? "");
-                if (Convert.ToInt32(reader["IsPrimary"]) == 1)
-                    table.PrimaryKeyColumns.Add(Convert.ToString(reader["COLUMN_NAME"]) ?? "");
+                var column = Convert.ToString(reader["COLUMN_NAME"]) ?? "";
+                table.Columns.Add(column);
+                if (Convert.ToInt32(reader["IsPrimary"]) == 1) table.PrimaryKeyColumns.Add(column);
             }
         }
 
         using (var command = new SqlCommand(@"
-SELECT sch1.name AS SourceSchema, tab1.name AS SourceTable,
-       col1.name AS SourceColumn,
-       sch2.name AS TargetSchema, tab2.name AS TargetTable,
-       col2.name AS TargetColumn, fk.name AS ForeignKeyName
+SELECT sch1.name AS SourceSchema, tab1.name AS SourceTable, col1.name AS SourceColumn,
+       sch2.name AS TargetSchema, tab2.name AS TargetTable, col2.name AS TargetColumn, fk.name AS ForeignKeyName
 FROM sys.foreign_keys fk
 JOIN sys.foreign_key_columns fkc ON fkc.constraint_object_id=fk.object_id
 JOIN sys.tables tab1 ON tab1.object_id=fkc.parent_object_id
@@ -161,81 +151,135 @@ ORDER BY SourceTable, ForeignKeyName, fkc.constraint_column_id;", connection))
         return (tables.Values.OrderBy(x => x.Name, StringComparer.OrdinalIgnoreCase).ToList(), relations.Values.ToList());
     }
 
-    private static void AddKnownLogicalRelations(IEnumerable<GraphTable> tables, IDictionary<string, GraphRelation> relations)
+    // FK/PK are only one source of truth. Many historical project databases lost
+    // constraints during import/export, so these rules deliberately describe the
+    // logical dependencies observed in the project family without creating SQL FKs.
+    private static void AddKnownLogicalRelations(IReadOnlyList<GraphTable> tables, IDictionary<string, GraphRelation> relations)
     {
-        var list = tables.ToList();
-        foreach (var source in list)
-        {
-            AddColumnLookup(list, relations, source, "PLC", "PLC", "Record", "PLC");
-            AddColumnLookup(list, relations, source, "Area", "Areas", "AreaName", "Area");
-            AddColumnLookup(list, relations, source, "Unit", "Units", "Name", "Unit");
-            AddColumnLookup(list, relations, source, "Class", "Classes", "Record", "Class");
-            AddColumnLookup(list, relations, source, "PLC_ClasssNumber", "PLC_ClasssNumber", "Record", "PLC_ClasssNumber");
-            AddColumnLookup(list, relations, source, "PLCClassNumber", "PLCClassNumber", "Record", "PLCClassNumber");
-            AddColumnLookup(list, relations, source, "PLC_ClassNumber", "PLC_ClassNumber", "Record", "PLC_ClassNumber");
+        AddClassLinks(tables, relations);
+        AddCommonEntityLinks(tables, relations);
+        AddPlcTypeLink(tables, relations);
+        AddTypeLookups(tables, relations);
+        AddProgramLinks(tables, relations);
+    }
 
-            var typeTarget = list.FirstOrDefault(x =>
-                x.Name.Equals(source.Name + "Type", StringComparison.OrdinalIgnoreCase) ||
-                x.Name.Equals(source.Name + "Types", StringComparison.OrdinalIgnoreCase));
-            if (typeTarget != null && source.Has("Type") && typeTarget.Has("Record"))
-                AddRelation(relations, source, typeTarget, new[] { "Type" }, new[] { "Record" }, "LOGICAL", "Type lookup");
-        }
-
-        foreach (var sourceName in new[] { "Actions", "Events" })
+    private static void AddClassLinks(IReadOnlyList<GraphTable> tables, IDictionary<string, GraphRelation> relations)
+    {
+        var classes = Find(tables, "Classes");
+        if (classes == null) return;
+        foreach (var name in new[] { "Actions", "Events" })
         {
-            var source = list.FirstOrDefault(x => x.Name.Equals(sourceName, StringComparison.OrdinalIgnoreCase));
-            var target = list.FirstOrDefault(x => x.Name.Equals("Classes", StringComparison.OrdinalIgnoreCase));
-            if (source != null && target != null && source.Has("Class") && target.Has("Record"))
-                AddRelation(relations, source, target, new[] { "Class" }, new[] { "Record" }, "LOGICAL", "Class lookup");
+            var source = Find(tables, name);
+            if (source != null && Has(source, "Class") && HasAny(classes, "Record", "ID", "Id"))
+                AddRelation(relations, source, classes, new[] { "Class" }, new[] { FirstExisting(classes, "Record", "ID", "Id") }, "LOGICAL", "Class lookup");
         }
     }
 
-    private static void AddColumnLookup(List<GraphTable> tables, IDictionary<string, GraphRelation> relations, GraphTable source, string sourceColumn, string targetTableName, string targetColumn, string rule)
+    private static void AddCommonEntityLinks(IReadOnlyList<GraphTable> tables, IDictionary<string, GraphRelation> relations)
     {
-        var target = tables.FirstOrDefault(x => x.Name.Equals(targetTableName, StringComparison.OrdinalIgnoreCase));
-        if (target == null || ReferenceEquals(source, target) || !source.Has(sourceColumn) || !target.Has(targetColumn)) return;
-        AddRelation(relations, source, target, new[] { sourceColumn }, new[] { targetColumn }, "LOGICAL", rule);
+        foreach (var source in tables)
+        {
+            if (source.Name.Equals("PLC", StringComparison.OrdinalIgnoreCase) || source.Name.Equals("Classes", StringComparison.OrdinalIgnoreCase)) continue;
+            AddSemanticLookup(tables, relations, source, "PLC", new[] { "PLC" }, new[] { "Record", "ID", "Id", "PLC" }, "PLC lookup");
+            AddSemanticLookup(tables, relations, source, "Area", new[] { "Area" }, new[] { "Record", "ID", "Id", "AreaName" }, "Area lookup");
+            AddSemanticLookup(tables, relations, source, "Unit", new[] { "Unit" }, new[] { "Record", "ID", "Id", "Name" }, "Unit lookup");
+            AddSemanticLookup(tables, relations, source, "PLCClasssNumber", new[] { "PLCClasssNumber", "PLC_ClasssNumber", "PLCClassNumber", "PLC_ClassNumber" }, new[] { "Record", "ID", "Id", "PLCClasssNumber", "PLCClassNumber" }, "PLC class number lookup");
+        }
     }
+
+    private static void AddPlcTypeLink(IReadOnlyList<GraphTable> tables, IDictionary<string, GraphRelation> relations)
+    {
+        var plc = Find(tables, "PLC");
+        if (plc == null) return;
+        var target = FindAny(tables, "PLCTypes", "PLCType", "PlcTypes");
+        if (target == null) return;
+        var sourceColumn = FirstExisting(plc, "Type", "PLCType", "Type_Record");
+        var targetColumn = FirstExisting(target, "Record", "ID", "Id", "Type");
+        if (sourceColumn != null && targetColumn != null)
+            AddRelation(relations, plc, target, new[] { sourceColumn }, new[] { targetColumn }, "LOGICAL", "PLC type lookup");
+    }
+
+    private static void AddTypeLookups(IReadOnlyList<GraphTable> tables, IDictionary<string, GraphRelation> relations)
+    {
+        foreach (var source in tables)
+        {
+            if (!Has(source, "Type")) continue;
+            var candidates = new[]
+            {
+                source.Name + "Type", source.Name + "Types",
+                source.Name.TrimEnd('s') + "Type", source.Name.TrimEnd('s') + "Types"
+            };
+            var target = candidates.Select(x => Find(tables, x)).FirstOrDefault(x => x != null);
+            if (target == null || ReferenceEquals(source, target)) continue;
+            var targetColumn = FirstExisting(target, "Record", "ID", "Id", "Type", "Name");
+            if (targetColumn != null)
+                AddRelation(relations, source, target, new[] { "Type" }, new[] { targetColumn }, "LOGICAL", "Type lookup");
+        }
+    }
+
+    private static void AddProgramLinks(IReadOnlyList<GraphTable> tables, IDictionary<string, GraphRelation> relations)
+    {
+        AddChild(tables, relations, "Prog_Recipe", "Recipe_Record", "Prog", "Record", "Program recipe");
+        AddChild(tables, relations, "Prog_Recipes", "Recipe_Record", "Prog_Recipe", "Record", "Program recipe values");
+        AddChild(tables, relations, "Prog_QueueSelections", "Queue_Record", "Prog_Queue", "Record", "Program queue");
+        AddChild(tables, relations, "Prog_QueueSelections", "Status_Record", "Statuses", "Record", "Program status");
+        AddChild(tables, relations, "Prog_QueueSelections", "Matrix_Record", "Matrix_List", "Record", "Program matrix");
+        AddChild(tables, relations, "Prog_QueueSelections", "Seq_Record", "Prog_Seq", "Record", "Program sequence");
+    }
+
+    private static void AddChild(IReadOnlyList<GraphTable> tables, IDictionary<string, GraphRelation> relations, string sourceName, string sourceColumn, string targetName, string targetColumn, string rule)
+    {
+        var source = Find(tables, sourceName);
+        var target = Find(tables, targetName);
+        if (source != null && target != null && Has(source, sourceColumn) && Has(target, targetColumn))
+            AddRelation(relations, source, target, new[] { sourceColumn }, new[] { targetColumn }, "LOGICAL", rule);
+    }
+
+    private static void AddSemanticLookup(IReadOnlyList<GraphTable> tables, IDictionary<string, GraphRelation> relations, GraphTable source, string semantic, string[] sourceColumns, string[] targetColumns, string rule)
+    {
+        var target = semantic.Equals("PLC", StringComparison.OrdinalIgnoreCase) ? FindAny(tables, "PLC")
+            : semantic.Equals("Area", StringComparison.OrdinalIgnoreCase) ? FindAny(tables, "Areas", "Area")
+            : semantic.Equals("Unit", StringComparison.OrdinalIgnoreCase) ? FindAny(tables, "Units", "Unit")
+            : FindAny(tables, "PLCClasssNumbers", "PLCClasssNumber", "PLCClassNumbers", "PLCClassNumber");
+        if (target == null || ReferenceEquals(source, target)) return;
+        var src = sourceColumns.FirstOrDefault(x => Has(source, x));
+        var dst = targetColumns.FirstOrDefault(x => Has(target, x));
+        if (src != null && dst != null) AddRelation(relations, source, target, new[] { src }, new[] { dst }, "LOGICAL", rule);
+    }
+
+    private static GraphTable Find(IEnumerable<GraphTable> tables, string name) => tables.FirstOrDefault(x => x.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
+    private static GraphTable FindAny(IEnumerable<GraphTable> tables, params string[] names) => names.Select(n => Find(tables, n)).FirstOrDefault(x => x != null);
+    private static bool Has(GraphTable table, string column) => table?.Columns.Any(x => x.Equals(column, StringComparison.OrdinalIgnoreCase)) == true;
+    private static bool HasAny(GraphTable table, params string[] columns) => columns.Any(x => Has(table, x));
+    private static string FirstExisting(GraphTable table, params string[] columns) => columns.FirstOrDefault(x => Has(table, x));
 
     private static void AddRelation(IDictionary<string, GraphRelation> relations, GraphTable source, GraphTable target, IEnumerable<string> sourceColumns, IEnumerable<string> targetColumns, string kind, string rule)
     {
-        var sourceList = sourceColumns.ToList();
-        var targetList = targetColumns.ToList();
-        var id = kind + "|" + source.FullName + "|" + target.FullName + "|" + string.Join(",", sourceList) + "|" + string.Join(",", targetList);
+        var src = sourceColumns.ToList();
+        var dst = targetColumns.ToList();
+        var id = kind + "|" + source.FullName + "|" + target.FullName + "|" + string.Join(",", src) + "|" + string.Join(",", dst);
         if (relations.ContainsKey(id)) return;
-        relations[id] = new GraphRelation { Source = source.FullName, Target = target.FullName, Kind = kind, Rule = rule, SourceColumns = sourceList, TargetColumns = targetList };
+        relations[id] = new GraphRelation { Source = source.FullName, Target = target.FullName, Kind = kind, Rule = rule, SourceColumns = src, TargetColumns = dst };
     }
 
     private void RenderGraph()
     {
         GraphCanvas.Children.Clear();
         if (_tables.Count == 0) return;
-
-        const double nodeWidth = 175;
-        const double nodeHeight = 68;
-        var centerX = 900d;
-        var centerY = 600d;
-        var radius = Math.Max(280d, Math.Min(500d, 65d * Math.Sqrt(_tables.Count)));
-
+        const double nodeWidth = 190, nodeHeight = 76;
+        var centerX = 1000d;
+        var centerY = 680d;
+        var radius = Math.Max(300d, Math.Min(570d, 70d * Math.Sqrt(_tables.Count)));
         var positions = new Dictionary<string, Point>(StringComparer.OrdinalIgnoreCase);
         var ordered = _tables.ToList();
         if (!string.IsNullOrWhiteSpace(_selectedTable))
         {
             var selected = ordered.FirstOrDefault(x => x.FullName.Equals(_selectedTable, StringComparison.OrdinalIgnoreCase));
-            if (selected != null)
-            {
-                ordered.Remove(selected);
-                ordered.Insert(0, selected);
-            }
+            if (selected != null) { ordered.Remove(selected); ordered.Insert(0, selected); }
         }
-
         for (int i = 0; i < ordered.Count; i++)
         {
-            if (i == 0 && !string.IsNullOrWhiteSpace(_selectedTable))
-            {
-                positions[ordered[i].FullName] = new Point(centerX, centerY);
-                continue;
-            }
+            if (i == 0 && !string.IsNullOrWhiteSpace(_selectedTable)) { positions[ordered[i].FullName] = new Point(centerX, centerY); continue; }
             int index = string.IsNullOrWhiteSpace(_selectedTable) ? i : i - 1;
             int count = string.IsNullOrWhiteSpace(_selectedTable) ? ordered.Count : Math.Max(1, ordered.Count - 1);
             var angle = -Math.PI / 2 + (2 * Math.PI * index / count);
@@ -245,27 +289,14 @@ ORDER BY SourceTable, ForeignKeyName, fkc.constraint_column_id;", connection))
         foreach (var relation in _relations)
         {
             if (!positions.TryGetValue(relation.Source, out var a) || !positions.TryGetValue(relation.Target, out var b)) continue;
-            var selected = !string.IsNullOrWhiteSpace(_selectedTable) &&
-                           (relation.Source.Equals(_selectedTable, StringComparison.OrdinalIgnoreCase) || relation.Target.Equals(_selectedTable, StringComparison.OrdinalIgnoreCase));
-            var line = new Line
-            {
-                X1 = a.X, Y1 = a.Y, X2 = b.X, Y2 = b.Y,
-                StrokeThickness = selected ? 2.5 : 1.0,
-                Opacity = selected ? 1.0 : 0.35
-            };
-            line.SetResourceReference(Shape.StrokeProperty, selected ? "BrushAccent" : "BrushBorder");
+            bool selected = !string.IsNullOrWhiteSpace(_selectedTable) && (relation.Source.Equals(_selectedTable, StringComparison.OrdinalIgnoreCase) || relation.Target.Equals(_selectedTable, StringComparison.OrdinalIgnoreCase));
+            var line = new Line { X1 = a.X, Y1 = a.Y, X2 = b.X, Y2 = b.Y, StrokeThickness = selected ? 2.5 : 1.2, Opacity = selected ? 1 : 0.5 };
+            line.SetResourceReference(Shape.StrokeProperty, relation.Kind.Equals("FK", StringComparison.OrdinalIgnoreCase) ? "BrushAccent" : "BrushTextSecondary");
+            if (!relation.Kind.Equals("FK", StringComparison.OrdinalIgnoreCase)) line.StrokeDashArray = new DoubleCollection { 5, 3 };
             GraphCanvas.Children.Add(line);
-
             if (selected || string.IsNullOrWhiteSpace(_selectedTable))
             {
-                var label = new TextBlock
-                {
-                    Text = $"{string.Join(",", relation.SourceColumns)} → {string.Join(",", relation.TargetColumns)}",
-                    FontSize = 9,
-                    MaxWidth = 170,
-                    TextTrimming = TextTrimming.CharacterEllipsis,
-                    ToolTip = $"{relation.Kind}: {relation.Rule}"
-                };
+                var label = new TextBlock { Text = $"{relation.SourceColumns.FirstOrDefault()} → {relation.TargetColumns.FirstOrDefault()}", FontSize = 9, MaxWidth = 180, TextTrimming = TextTrimming.CharacterEllipsis, ToolTip = $"{relation.Kind}: {relation.Rule}" };
                 label.SetResourceReference(TextBlock.ForegroundProperty, "BrushTextSecondary");
                 Canvas.SetLeft(label, (a.X + b.X) / 2 - 80);
                 Canvas.SetTop(label, (a.Y + b.Y) / 2 - 8);
@@ -276,43 +307,30 @@ ORDER BY SourceTable, ForeignKeyName, fkc.constraint_column_id;", connection))
         foreach (var table in ordered)
         {
             var point = positions[table.FullName];
-            var border = new Border
-            {
-                Width = nodeWidth,
-                Height = nodeHeight,
-                CornerRadius = new CornerRadius(9),
-                Padding = new Thickness(8),
-                Cursor = Cursors.Hand,
-                ToolTip = BuildTableToolTip(table)
-            };
-            border.SetResourceReference(Border.BackgroundProperty, table.FullName.Equals(_selectedTable, StringComparison.OrdinalIgnoreCase) ? "BrushSelected" : "BrushPanel");
-            border.SetResourceReference(Border.BorderBrushProperty, table.FullName.Equals(_selectedTable, StringComparison.OrdinalIgnoreCase) ? "BrushAccent" : "BrushBorder");
-            border.BorderThickness = new Thickness(table.FullName.Equals(_selectedTable, StringComparison.OrdinalIgnoreCase) ? 2 : 1);
+            bool isSelected = table.FullName.Equals(_selectedTable, StringComparison.OrdinalIgnoreCase);
+            var border = new Border { Width = nodeWidth, Height = nodeHeight, CornerRadius = new CornerRadius(9), Padding = new Thickness(8), Cursor = Cursors.Hand, ToolTip = BuildTableToolTip(table) };
+            border.SetResourceReference(Border.BackgroundProperty, isSelected ? "BrushSelected" : "BrushPanel");
+            border.SetResourceReference(Border.BorderBrushProperty, isSelected ? "BrushAccent" : "BrushBorder");
+            border.BorderThickness = new Thickness(isSelected ? 2 : 1);
             var stack = new StackPanel();
             var name = new TextBlock { Text = table.Name, FontWeight = FontWeights.SemiBold, FontSize = 12, TextTrimming = TextTrimming.CharacterEllipsis };
             name.SetResourceReference(TextBlock.ForegroundProperty, "BrushText");
             stack.Children.Add(name);
-            var key = new TextBlock { Text = table.PrimaryKeyColumns.Count == 0 ? "без PK" : "PK: " + string.Join(", ", table.PrimaryKeyColumns), FontSize = 9, TextTrimming = TextTrimming.CharacterEllipsis };
+            var key = new TextBlock { Text = table.PrimaryKeyColumns.Count == 0 ? "PK не объявлен" : "PK: " + string.Join(", ", table.PrimaryKeyColumns), FontSize = 9, TextTrimming = TextTrimming.CharacterEllipsis };
             key.SetResourceReference(TextBlock.ForegroundProperty, "BrushTextSecondary");
             stack.Children.Add(key);
             var cols = new TextBlock { Text = $"полей: {table.Columns.Count}", FontSize = 9 };
             cols.SetResourceReference(TextBlock.ForegroundProperty, "BrushTextSecondary");
             stack.Children.Add(cols);
             border.Child = stack;
-            border.MouseLeftButtonDown += (_, __) =>
-            {
-                _selectedTable = table.FullName;
-                TxtSelectedTable.Text = table.Name;
-                RenderGraph();
-            };
+            border.MouseLeftButtonDown += (_, __) => { _selectedTable = table.FullName; TxtSelectedTable.Text = table.Name; RenderGraph(); };
             Canvas.SetLeft(border, point.X - nodeWidth / 2);
             Canvas.SetTop(border, point.Y - nodeHeight / 2);
             GraphCanvas.Children.Add(border);
         }
     }
 
-    private static string BuildTableToolTip(GraphTable table)
-        => $"{table.FullName}\n{(table.PrimaryKeyColumns.Count == 0 ? "PK: отсутствует" : "PK: " + string.Join(", ", table.PrimaryKeyColumns))}\n\nПоля:\n{string.Join(", ", table.Columns)}";
+    private static string BuildTableToolTip(GraphTable table) => $"{table.FullName}\n{(table.PrimaryKeyColumns.Count == 0 ? "PK: не объявлен" : "PK: " + string.Join(", ", table.PrimaryKeyColumns))}\n\nПоля:\n{string.Join(", ", table.Columns)}";
 
     private sealed class GraphTable
     {
