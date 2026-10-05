@@ -15,7 +15,6 @@
                     <TextBlock Text="Проект" VerticalAlignment="Center" Foreground="{DynamicResource BrushTextSecondary}" FontSize="10" Margin="0,0,7,0"/>
                     <TextBlock x:Name="TxtProjectDatabase" Text="не выбран" Width="190" VerticalAlignment="Center" Foreground="{DynamicResource BrushText}" TextTrimming="CharacterEllipsis" ToolTip="Текущая база проекта"/>
                     <Button Content="Выбрать проект" Height="30" Margin="9,0,0,0" Style="{StaticResource BtnSecondary}" Click="SelectProject_Click"/>
-                    <Button Content="↻" Width="34" Height="30" Margin="5,0,0,0" Style="{StaticResource BtnCompact}" Click="Refresh_Click" ToolTip="Обновить объекты"/>
                 </StackPanel>
             </Border>
         </Grid>
@@ -80,9 +79,7 @@
                         <ListBox.ItemTemplate><DataTemplate>
                             <Border x:Name="ObjectCard" CornerRadius="8" Padding="10,9" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" Background="{DynamicResource BrushBase}">
                                 <Grid>
-                                    <Grid.ColumnDefinitions><ColumnDefinition Width="30"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-                                    <Border Width="24" Height="24" CornerRadius="5" Background="{DynamicResource BrushSelected}" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" VerticalAlignment="Top"><TextBlock Text="{Binding RowIndex}" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="{DynamicResource BrushAccent}" FontSize="8" FontWeight="SemiBold"/></Border>
-                                    <TextBlock Grid.Column="1" Text="{Binding Name}" Margin="8,0,2,0" Foreground="{DynamicResource BrushText}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" ToolTip="{Binding Name}" VerticalAlignment="Center"/>
+                                    <TextBlock Text="{Binding Name}" Foreground="{DynamicResource BrushText}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" ToolTip="{Binding Name}" VerticalAlignment="Center"/>
                                 </Grid>
                             </Border>
                             <DataTemplate.Triggers>
