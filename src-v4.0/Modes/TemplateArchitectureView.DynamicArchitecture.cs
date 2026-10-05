@@ -2,6 +2,7 @@ using System;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Threading;
 
 namespace Configurator;
@@ -16,7 +17,7 @@ public partial class TemplateArchitectureView
     {
         EventManager.RegisterClassHandler(typeof(TemplateArchitectureView), FrameworkElement.LoadedEvent,
             new RoutedEventHandler(TemplateArchitectureView_LoadedDynamic));
-        EventManager.RegisterClassHandler(typeof(TemplateArchitectureView), FrameworkElement.IsVisibleChangedEvent,
+        EventManager.RegisterClassHandler(typeof(TemplateArchitectureView), UIElement.IsVisibleChangedEvent,
             new DependencyPropertyChangedEventHandler(TemplateArchitectureView_VisibilityChangedDynamic));
         EventManager.RegisterClassHandler(typeof(TemplateArchitectureView), ButtonBase.ClickEvent,
             new RoutedEventHandler(TemplateArchitectureView_ButtonClickedDynamic), true);
